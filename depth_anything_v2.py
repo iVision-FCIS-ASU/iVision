@@ -6,7 +6,7 @@ class DepthAnythingV2:
     def __init__(self):
         self.sess = ort.InferenceSession(
         "weights/depth_anything_v2_vits.onnx",
-        providers=['CUDAExecutionProvider', 'CPUExecutionProvider']
+        # providers=['CUDAExecutionProvider', 'CPUExecutionProvider']
     )
 
     @staticmethod
@@ -43,9 +43,8 @@ class DepthAnythingV2:
 
         # Run ONNX inference
         outputs = self.sess.run(None, {"input": inp})
-        print("Output shape:", outputs[0].shape)
+        # print("Output shape:", outputs[0].shape)
         # depth_raw = outputs[0][0, 0]  # shape (H, W)
-        import numpy as np
 
         out = outputs[0]               # ONNX outputs list -> first output
         # collapse singleton dims so we end up with a 2D HxW depth map
