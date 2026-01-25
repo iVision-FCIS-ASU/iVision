@@ -4,8 +4,8 @@ import line_profiler
 from typing import Literal
 from ultralytics import YOLO
 from ultralytics.utils.ops import scale_masks
-from midas_models import MiDaS
-from depth_anything_v2 import DepthAnythingV2
+from models_download import download_models
+from depth_models import MiDaS, DepthAnythingV2
 from depth_helpers import get_mean_depth_box, get_mean_depth_mask
 
 def get_models(
@@ -37,7 +37,7 @@ def get_models(
     return model_yolo, model_depth, get_mean_method
 
 def get_output_image(yolo_classes, r, depth_bw, depth_rgb, get_mean_method):
-    if get_mean_method == get_mean_depth_mask:
+    if get_mean_method == get_mean_depth_mask and r.masks is not None:
         masks = scale_masks(r.masks.data.unsqueeze(1), r.boxes.orig_shape, padding=True)
     else:
         masks = np.zeros(len(r.boxes))
@@ -97,9 +97,11 @@ def run(
     cv2.destroyAllWindows()
 
 if __name__ == "__main__":
+    download_models()
+
     run(
         model_yolo_type="segment",
-        model_depth_type="midas_v21_small_256",
+        model_depth_type="depth_anything_v2",
         side_by_side=False
     )
     
