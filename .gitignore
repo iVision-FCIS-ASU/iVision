@@ -1,7 +1,9 @@
-weights/depth_anything_v2_vits.onnx
-weights/yolo26n-seg.onnx
-weights/yolo26n-seg.pt
-weights/yolo26n.onnx
 weights/yolo26n.pt
+weights/yolo26n.onnx
+weights/yolo26n-seg.pt
+weights/yolo26n-seg.onnx
 weights/dpt_swin2_tiny_256.pt
 weights/midas_v21_small_256.pt
+weights/depth_anything_v2_vits.pth
+weights/depth_anything_v2_vits.onnx
+weights/depth_anything_v2_vits.onnx.data
