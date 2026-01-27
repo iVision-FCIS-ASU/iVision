@@ -1,12 +1,14 @@
 import cv2
 import numpy as np
 import line_profiler
+import threading
 from typing import Literal
 from ultralytics import YOLO
 from ultralytics.utils.ops import scale_masks
 from models_download import download_models
 from depth_models import MiDaS, DepthAnythingV2
 from depth_helpers import get_mean_depth_box, get_mean_depth_mask
+from scene_narration_models import MobileViT
 
 def get_models(
         model_yolo_type: Literal["detect", "segment"],
@@ -33,8 +35,10 @@ def get_models(
         case _:
             print("ERROR: Invalid Depth Model!")
             assert False
+        
+    model_scene_narration = MobileViT()
 
-    return model_yolo, model_depth, get_mean_method
+    return model_yolo, model_depth, get_mean_method, model_scene_narration
 
 def get_output_image(yolo_classes, r, depth_bw, depth_rgb, get_mean_method):
     if get_mean_method == get_mean_depth_mask and r.masks is not None:
@@ -63,6 +67,12 @@ def get_output_image(yolo_classes, r, depth_bw, depth_rgb, get_mean_method):
 
     return depth_rgb
 
+def get_image_caption_thread(model_scene_narration: MobileViT, image):
+    print("\n-----STARTING NARRATION-----")
+    narration_text = model_scene_narration.run_scene_narration(image)
+    print(f"Final Narration: {narration_text}")
+    print("-----STOPPING NARRATION-----")
+
 def run(
         model_yolo_type: Literal["detect", "segment"],
         model_depth_type: Literal["midas_v21_small_256", "dpt_swin2_tiny_256", "depth_anything_v2"],
@@ -70,7 +80,7 @@ def run(
     ):
 
     cap = cv2.VideoCapture(0)
-    model_yolo, model_depth, get_mean_method = get_models(model_yolo_type, model_depth_type)
+    model_yolo, model_depth, get_mean_method, model_scene_narration = get_models(model_yolo_type, model_depth_type)
     yolo_classes = model_yolo.names
 
     while True:
@@ -90,6 +100,9 @@ def run(
             output_image = np.hstack((frame, output_image))
         cv2.imshow(f"Object Detection + Depth Estimation", output_image)
 
+        if cv2.waitKey(1) & 0xFF == ord('c'):
+            threading.Thread(target=get_image_caption_thread, args=(model_scene_narration, frame), daemon=True).start()
+        
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
 
@@ -101,7 +114,7 @@ if __name__ == "__main__":
 
     run(
         model_yolo_type="segment",
-        model_depth_type="depth_anything_v2",
+        model_depth_type="midas_v21_small_256",
         side_by_side=False
     )
     

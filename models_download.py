@@ -4,6 +4,7 @@ from tqdm import tqdm
 from pathlib import Path
 from ultralytics import YOLO
 from depth_anything_v2.dpt import DepthAnythingV2
+from transformers import BlipProcessor, BlipForConditionalGeneration, CLIPProcessor, CLIPModel
 
 def download_file(path: str, url: str):
     print(f"Downloading file: {path}")
@@ -31,6 +32,8 @@ def download_file(path: str, url: str):
 
 def download_models():
     print("\n-----Downloading Models-----\n")
+
+    Path("weights").mkdir(parents=True, exist_ok=True)
 
     if not Path("weights/yolo26n.onnx").is_file():
         model_detect = YOLO("weights/yolo26n.pt", task="detect")
@@ -73,4 +76,20 @@ def download_models():
             )
         print("Exported to weights/depth_anything_v2_vits.onnx")
     
+    if not Path("weights/best_mobilevit_merged.pth").is_file():
+        download_file("weights/best_mobilevit_merged.pth", "https://huggingface.co/Devil-Assassin/wandering-mode/resolve/main/best_mobilevit_merged.pth?download=true")
+    
+    if not Path("weights/best_mobilevit_indoor.pth").is_file():
+        download_file("weights/best_mobilevit_indoor.pth", "https://huggingface.co/Devil-Assassin/wandering-mode/resolve/main/best_mobilevit_indoor.pth?download=true")
+    
+    if not Path("weights/best_mobilevit_outdoor.pth").is_file():
+        download_file("weights/best_mobilevit_outdoor.pth", "https://huggingface.co/Devil-Assassin/wandering-mode/resolve/main/best_mobilevit_outdoor.pth?download=true")
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    # BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-base", cache_dir="weights/blip", use_fast=True)
+    # BlipForConditionalGeneration.from_pretrained("Salesforce/blip-image-captioning-base", cache_dir="weights/blip", use_safetensors=False).to(device)
+    # CLIPProcessor.from_pretrained("openai/clip-vit-base-patch16", cache_dir="weights/blip", use_fast=True)
+    # CLIPModel.from_pretrained("openai/clip-vit-base-patch16", cache_dir="weights/blip", use_safetensors=False).to(device)
+
     print("\n-----All Downloads Completed-----\n")
