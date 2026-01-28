@@ -22,9 +22,6 @@ class MobileViT:
         self.narrator = iVisionNarrator(self.device)
 
     def load_mobilevit_weights(self, model_path, num_classes):
-        """
-        Loads weights into mobilevit_xxs architecture.
-        """
         print(f"Loading weights for: {model_path}")
         model = timm.create_model('mobilevit_xxs', pretrained=False, num_classes=num_classes)
         state_dict = torch.load(model_path, map_location=self.device)
@@ -33,8 +30,7 @@ class MobileViT:
         model.eval()
         return model
 
-    def run_scene_narration(self, image):
-        # Prepare Image
+    def preprocess(self, image):
         raw_img = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         raw_img = Image.fromarray(raw_img)
         # raw_img = Image.open(image).convert('RGB')
@@ -44,6 +40,15 @@ class MobileViT:
             transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
         ])
         tensor_img = transform(raw_img).unsqueeze(0).to(self.device)
+        return raw_img, tensor_img
+
+    def get_scene_type_binary(self, image):
+        _, tensor_img = self.preprocess(image)
+        is_outdoor = torch.argmax(self.binary_mdl(tensor_img), dim=1).item()
+        return "outdoor" if is_outdoor else "indoor"
+
+    def run_scene_narration(self, image):
+        raw_img, tensor_img = self.preprocess(image)
 
         # 1. Timing MobileViT Phase
         print("-----PREDICTING SCENE TYPE-----")

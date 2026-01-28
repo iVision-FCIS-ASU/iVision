@@ -5,7 +5,7 @@ from ultralytics.utils.ops import scale_masks
 
 
 # model = YOLO("yolo26n.onnx", task="detect")
-model = YOLO("yolo26n-seg.onnx", task="segment")
+model = YOLO("weights/yolo26n-seg.onnx", task="segment")
 
 # model.export(format="onnx")
 
