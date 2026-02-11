@@ -76,8 +76,8 @@ def download_models():
             )
         print("Exported to weights/depth_anything_v2_vits.onnx")
     
-    if not Path("weights/complexity_estimation_v1.keras").is_file():
-        download_file("weights/complexity_estimation_v1.keras", "https://huggingface.co/Devil-Assassin/wandering-mode/resolve/main/complexity_estimation_v1.keras?download=true")
+    if not Path("weights/complexity_estimation_v1.tflite").is_file():
+        download_file("weights/complexity_estimation_v1.tflite", "https://huggingface.co/Devil-Assassin/wandering-mode/resolve/main/complexity_estimation_v1.tflite?download=true")
 
     if not Path("weights/best_mobilevit_merged.pth").is_file():
         download_file("weights/best_mobilevit_merged.pth", "https://huggingface.co/Devil-Assassin/wandering-mode/resolve/main/best_mobilevit_merged.pth?download=true")
@@ -90,9 +90,9 @@ def download_models():
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-base", cache_dir="weights/blip", use_fast=True)
-    # BlipForConditionalGeneration.from_pretrained("Salesforce/blip-image-captioning-base", cache_dir="weights/blip", use_safetensors=False).to(device)
-    # CLIPProcessor.from_pretrained("openai/clip-vit-base-patch16", cache_dir="weights/blip", use_fast=True)
-    # CLIPModel.from_pretrained("openai/clip-vit-base-patch16", cache_dir="weights/blip", use_safetensors=False).to(device)
+    BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-base", cache_dir="weights/blip", use_fast=True)
+    BlipForConditionalGeneration.from_pretrained("Salesforce/blip-image-captioning-base", cache_dir="weights/blip").to(device)
+    CLIPProcessor.from_pretrained("openai/clip-vit-base-patch16", cache_dir="weights/blip", use_fast=True)
+    CLIPModel.from_pretrained("openai/clip-vit-base-patch16", cache_dir="weights/blip").to(device)
 
     print("\n-----All Downloads Completed-----\n")

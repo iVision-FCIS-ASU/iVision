@@ -1,70 +1,54 @@
 import cv2
+import torch
 import numpy as np
+import line_profiler
 from ultralytics import YOLO
 from ultralytics.utils.ops import scale_masks
 
+@line_profiler.profile
+def run_yolo():
+    # model = YOLO("weights/yolo26n.pt",       task="detect")
+    # model = YOLO("weights/yolo26n.onnx",     task="detect")
+    # model = YOLO("weights/yolo26n-seg.pt",   task="segment")
+    model = YOLO("weights/yolo26n-seg.onnx", task="segment")
+    # model.export(format="onnx")
 
-# model = YOLO("yolo26n.onnx", task="detect")
-model = YOLO("weights/yolo26n-seg.onnx", task="segment")
+    color = np.array([0, 255, 0], dtype=np.uint8) * 0.5
+    cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
 
-# model.export(format="onnx")
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            print("ERROR: Failed to capture frame!")
+            break
 
-cap = cv2.VideoCapture(0)
+        yolo_output = model(frame, verbose=True)[0]
+        
+        if yolo_output.masks is not None:
+            masks = scale_masks(yolo_output.masks.data.unsqueeze(1), yolo_output.boxes.orig_shape, padding=True)
 
-np.random.seed(69)
-color = np.random.randint(0, 255, (3,), dtype=np.uint8)
+            for mask_model in masks:
+                mask = mask_model[0].cpu().numpy() > 0.5
+                frame[mask] = frame[mask] * 0.5 + color
 
-while True:
-    ret, frame = cap.read()
-    
-    if not ret:
-        continue
+        if yolo_output.boxes is not None:
+            for box in yolo_output.boxes:
+                x1, y1, x2, y2 = map(int, box.xyxy[0])
+                cls = int(box.cls[0])
+                conf = float(box.conf[0])
 
-    r = model(frame, verbose=True)[0]
-    
-    # print(frame.shape)
-    # frame = r.plot()
-    # print(frame.shape)
-    img = r.orig_img.copy()
-    H, W = r.orig_shape
+                cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                cv2.putText(frame, f"{model.names[cls]} {conf:.2f})",
+                    (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
 
-    if r.masks is not None:
-        masks = scale_masks(r.masks.data.unsqueeze(1), r.boxes.orig_shape, padding=True)
+        cv2.imshow("YOLO 26 Nano", frame)
 
-        for mask_model in masks:
-            mask = mask_model[0].cpu().numpy()
-            # mask = np.squeeze(mask)
-            # mask = cv2.resize(mask.astype(np.float32), (W, H), interpolation=cv2.INTER_NEAREST)
+        key_pressed = cv2.waitKey(1)
+        if key_pressed == ord("q") or key_pressed == ord("Q"):
+            break
 
-            mask = mask > 0.5
-            
-            # color = np.random.randint(0, 255, (3,), dtype=np.uint8)
-            img[mask] = img[mask] * 0.5 + color * 0.5
-            # img[mask] = img[mask] * 0.5
+    cap.release()
+    cv2.destroyAllWindows()
 
-    if r.boxes is not None:
-        for box in r.boxes:
-            x1, y1, x2, y2 = map(int, box.xyxy[0])
-            cls = int(box.cls[0])
-            conf = float(box.conf[0])
-
-            label = f"{model.names[cls]} {conf:.2f})"
-
-            cv2.rectangle(img, (x1, y1), (x2, y2), (0, 0, 255), 2)
-            cv2.putText(
-                img,
-                label,
-                (x1, y1 - 5),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.5,
-                (0, 0, 255),
-                1
-            )
-
-    cv2.imshow("YOLO 26", img)
-
-    if cv2.waitKey(1) & 0xFF == ord("q"):
-        break
-
-cap.release()
-cv2.destroyAllWindows()
+if __name__ == "__main__":
+    run_yolo()

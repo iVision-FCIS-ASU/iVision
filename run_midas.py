@@ -2,13 +2,15 @@ import torch
 import cv2
 import time
 import numpy as np
+import line_profiler
 from typing import Literal
 from imutils.video import VideoStream
 
 from midas.model_loader import model_paths, load_model
 from midas.model_processor import process, create_side_by_side
 
-def run (
+@line_profiler.profile
+def run(
         model_type: Literal["midas_v21_small_256", "dpt_swin2_tiny_256"], 
         optimize: bool,
         side: bool, 
@@ -19,7 +21,7 @@ def run (
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model, transform, net_w, net_h = load_model(device, model_path, model_type, optimize)
 
-    with torch.no_grad():
+    with torch.inference_mode():
         fps = 1
         video = VideoStream(0).start()
         time_start = time.time()
@@ -60,6 +62,6 @@ if __name__ == "__main__":
     run(
         model_type="midas_v21_small_256",
         optimize=False,
-        side=True,
+        side=False,
         grayscale=True
     )

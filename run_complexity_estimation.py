@@ -1,45 +1,31 @@
 import cv2
-import numpy as np
-from tensorflow.keras.models import load_model
+import line_profiler
+from complexity_estimation import SceneType, Complexity, ComplexityEstimator
 
-model = load_model("weights/complexity_estimation_v1.keras")
-classes= ["cloudy","foggy","night","rainy","snowy","sunny"]
+@line_profiler.profile
+def run_complexity_estimation():
+    model = ComplexityEstimator()
+    cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
 
-def preprocess(frame):
-    frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    frame = cv2.resize(frame, (224, 224)).astype(np.uint8)
-    frame = np.expand_dims(frame, axis=0)
-    return frame
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            print("ERROR: Failed to capture frame!")
+            break
+        
+        complexity, weather, confidence = model.predict(SceneType.OUTDOOR, frame)
 
-def predict(frame):
-    input_img = preprocess(frame)
-    
-    preds = model.predict(input_img, verbose=0)
-    class_id = np.argmax(preds, axis=1)[0]
-    confidence = preds[0][class_id]
-    label = classes[class_id]
+        cv2.putText(frame, f"{complexity.name}: {weather.name} ({confidence:.2f})",
+                    (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
 
-    return label, confidence
+        cv2.imshow("Complexity Estimation", frame)
 
-cap = cv2.VideoCapture(0)
+        key_pressed = cv2.waitKey(1)
+        if key_pressed == ord("q") or key_pressed == ord("Q"):
+            break
 
-while True:
-    ret, frame = cap.read()
-    if not ret:
-        print("Failed to grab frame from IP camera")
-        continue
+    cap.release()
+    cv2.destroyAllWindows()
 
-    label, confidence = predict(frame)
-
-    cv2.putText(frame, f"{label} {confidence:.2f}",
-                (20, 40),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                1, (0, 255, 0), 2)
-
-    cv2.imshow("MobileNet IP Camera Classification", frame)
-
-    if cv2.waitKey(1) & 0xFF == ord('q'):
-        break
-
-cap.release()
-cv2.destroyAllWindows()
+if __name__ == "__main__":
+    run_complexity_estimation()

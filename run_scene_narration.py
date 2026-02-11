@@ -1,76 +1,65 @@
-# main.py
-import torch
-import timm
-import time
-from PIL import Image
-import torchvision.transforms as transforms
-from utils.captioning import iVisionNarrator
-from utils.mapping import INDOOR_CLASSES, OUTDOOR_MERGE_RULES
+import cv2
+import requests
+import numpy as np
+import threading
+import line_profiler
+from numpy import typing as npt
+from scene_classification import SceneClassifier
+from scene_narration import SceneNarrator
 
-# Auto-detect CUDA for best performance
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+IS_CAPTION_RUNNING = False
 
-def load_mobilevit_weights(model_path, num_classes):
-    """
-    Loads weights into mobilevit_xxs architecture.
-    """
-    print(f"Loading weights for: {model_path}")
-    model = timm.create_model('mobilevit_xxs.cvnets_in1k', pretrained=False, num_classes=num_classes)
-    state_dict = torch.load(model_path, map_location=device)
-    model.load_state_dict(state_dict)
-    model.to(device)
-    model.eval()
-    return model
+def get_frame(url: None | str) -> None | npt.NDArray:
+    if url is None:
+        return None
 
-# --- Initialization Phase ---
-print("Initializing iVision System...")
-binary_mdl = load_mobilevit_weights('models/best_mobilevit_merged.pth', num_classes=2)
-indoor_mdl = load_mobilevit_weights('models/best_mobilevit_indoor.pth', num_classes=len(INDOOR_CLASSES))
-outdoor_mdl = load_mobilevit_weights('models/best_mobilevit_outdoor.pth', num_classes=len(OUTDOOR_MERGE_RULES))
-narrator = iVisionNarrator(device)
+    response = requests.get(url)
+    image = np.asarray(bytearray(response.content), dtype="uint8")
+    image = cv2.imdecode(image, cv2.IMREAD_COLOR)
+    return image
 
-def run_scene_narration(img_path):
-    # Prepare Image
-    raw_img = Image.open(img_path).convert('RGB')
-    transform = transforms.Compose([
-        transforms.Resize((256, 256)),
-        transforms.ToTensor(),
-        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-    ])
-    tensor_img = transform(raw_img).unsqueeze(0).to(device)
+def narrate(scene_narrator: SceneNarrator, frame: npt.NDArray, scene_classifier: SceneClassifier):
+    caption = scene_narrator.get_narration(frame, scene_classifier)
+    print(caption)
+    global IS_CAPTION_RUNNING
+    IS_CAPTION_RUNNING = False
 
-    # 1. Timing MobileViT Phase
-    start_mobilevit = time.time()
-    with torch.no_grad():
-        is_outdoor = torch.argmax(binary_mdl(tensor_img), dim=1).item()
-        expert = outdoor_mdl if is_outdoor == 1 else indoor_mdl
-        scene_idx = torch.argmax(expert(tensor_img), dim=1).item()
-    mobilevit_time = time.time() - start_mobilevit
+@line_profiler.profile
+def run_scene_narration(frame: None | npt.NDArray):
+    scene_classifier = SceneClassifier()
+    scene_narrator = SceneNarrator()
+
+    if frame is not None:
+        caption = narrate(scene_narrator, frame, scene_classifier)
+        print(caption)
+        return
+
+    global IS_CAPTION_RUNNING
+    cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            print("ERROR: Failed to capture")
+            break
         
-    scene_label = list(OUTDOOR_MERGE_RULES.keys())[scene_idx] if is_outdoor == 1 else list(INDOOR_CLASSES.keys())[scene_idx]
+        cv2.imshow("Scene Narration", frame)
 
-    # 2. Timing Narration & CLIP Phase
-    caption, clip_score, blip_time, clip_eval_time = narrator.narrate(raw_img, scene_label)
+        key_pressed = cv2.waitKey(1)
+        if not IS_CAPTION_RUNNING and (key_pressed == ord("c") or key_pressed == ord("C")):
+            IS_CAPTION_RUNNING = True
+            threading.Thread(target=narrate, args=(scene_narrator, frame, scene_classifier), daemon=True).start()
 
-    # 3. Final Performance Report
-    print(f"\n{'='*30}")
-    print(f" PERFORMANCE REPORT")
-    print(f"{'='*30}")
-    print(f"1. MobileViT Expert  : {mobilevit_time:.3f}s")
-    print(f"2. BLIP Generation   : {blip_time:.3f}s")
-    print(f"3. CLIP Ranking      : {clip_eval_time:.3f}s")
-    print(f"4. CLIPScore         : {clip_score:.4f}")
-    print(f"Total Inference Time : {(mobilevit_time + blip_time + clip_eval_time):.3f}s")
-    print(f"{'='*30}")
+        if key_pressed == ord("q") or key_pressed == ord("Q"):
+            break
     
-    return f"You are in a {scene_label.replace('_', ' ')}. {caption}"
+    cap.release()
+    cv2.destroyAllWindows()
 
 if __name__ == "__main__":
-    # Test path - Use 'r' prefix for windows paths
-    test_img = r"C:\Users\lenovo\Downloads\WhatsApp Image 2026-01-25 at 1.13.23 PM.jpeg"
-    try:
-        print("\n--- System Processing ---")
-        final_output = run_scene_narration(test_img)
-        print(f"Final Narration: {final_output}")
-    except Exception as e:
-        print(f"Critical Error: {e}")
+    url = None
+    # url = "http://images.cocodataset.org/val2017/000000039769.jpg"
+    # url = "https://thumbs.dreamstime.com/b/cute-cat-sleeping-street-car-random-58655731.jpg"
+    frame = get_frame(url)
+
+    run_scene_narration(frame)

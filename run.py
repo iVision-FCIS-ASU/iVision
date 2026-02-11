@@ -11,8 +11,9 @@ from ultralytics.utils.ops import scale_masks
 from models_download import download_models
 from depth_models import MiDaS, DepthAnythingV2
 from depth_helpers import get_mean_depth_box, get_mean_depth_mask
-from scene_narration_models import MobileViT
-from complexity_estimation_models import SceneType, Weather, Complexity, ComplexityEstimation
+from scene_classification import SceneClassifier
+from scene_narration import SceneNarrator
+from complexity_estimation import SceneType, Weather, Complexity, ComplexityEstimator
 
 class iVision:
     def __init__(
@@ -20,7 +21,8 @@ class iVision:
         model_yolo_type: Literal["detect", "segment"],
         model_depth_type: Literal["midas_v21_small_256", "dpt_swin2_tiny_256", "depth_anything_v2"],
         side_by_side: bool = False,
-        debug: bool = False
+        debug: bool = False,
+        cap_id: int = 0
     ):
         print("\n=========================")
         print("-----iVision Started-----")
@@ -30,11 +32,10 @@ class iVision:
         self.model_depth_type = model_depth_type
         self.side_by_side = side_by_side
         self.debug = debug
+        self.cap_id = cap_id
         
         download_models()
-        
         self.__get_models()
-
         
         self.complexity_lock = threading.Lock()
         self.complexity = Complexity.SIMPLE
@@ -53,7 +54,16 @@ class iVision:
 
     def __get_models(self):
         print("\n-----Loading Models-----\n")
+        yolo_types = ["detect", "segment"]
+        if self.model_yolo_type not in yolo_types:
+            print("ERROR: Invalid YOLO Model!")
+            assert False
         
+        depth_types = ["midas_v21_small_256", "dpt_swin2_tiny_256", "depth_anything_v2"]
+        if self.model_depth_type not in depth_types:
+            print("ERROR: Invalid Depth Model!")
+            assert False
+
         print("-----Loading YOLO-----")
         self.models_yolo = {
             "detect": {
@@ -66,17 +76,11 @@ class iVision:
             }
         }
 
-        match self.model_yolo_type:
-            case "detect":
-                # self.model_yolo = YOLO("weights/yolo26n.onnx", task="detect")
-                self.get_mean_method = get_mean_depth_box
-            case "segment":
-                # self.model_yolo = YOLO("weights/yolo26n-seg.onnx", task="segment")
-                self.get_mean_method = get_mean_depth_mask
-            case _:
-                print("ERROR: Invalid YOLO Model!")
-                assert False
-        # self.yolo_classes = self.model_yolo.names
+        self.get_mean_depth = { 
+            "detect": get_mean_depth_box,
+            "segment": get_mean_depth_mask
+        }
+
         self.yolo_classes = self.models_yolo[self.model_yolo_type][Complexity.SIMPLE].names
         
         print("-----Loading Depth Estimation-----")
@@ -87,23 +91,20 @@ class iVision:
 
         match self.model_depth_type:
             case "midas_v21_small_256":
-                # self.model_depth = MiDaS(self.model_depth_type)
                 self.models_depth[Complexity.COMPLEX] = MiDaS(self.model_depth_type)
             case "dpt_swin2_tiny_256":
-                # self.model_depth = MiDaS(self.model_depth_type)
                 self.models_depth[Complexity.COMPLEX] = MiDaS(self.model_depth_type)
             case "depth_anything_v2":
-                # self.model_depth = DepthAnythingV2()
                 self.models_depth[Complexity.COMPLEX] = DepthAnythingV2()
-            case _:
-                print("ERROR: Invalid Depth Model!")
-                assert False
         
         print("-----Loading Complexity Estimation-----")
-        self.model_complexity_estimation = ComplexityEstimation()
+        self.model_complexity_estimator = ComplexityEstimator()
         
+        print("-----Loading Scene Classifier-----")
+        self.model_scene_classifier = SceneClassifier()
+
         print("-----Loading Scene Narration-----")
-        self.model_scene_narration = MobileViT()
+        self.model_scene_narrator = SceneNarrator()
         
         print("\n-----All Models Loaded-----\n")
 
@@ -113,21 +114,19 @@ class iVision:
             scene_type = self.scene_type
             weather = self.weather
 
-        # depth_bw, depth_rgb = self.model_depth.get_depth_image(frame)
         depth_bw, depth_rgb = self.models_depth[complexity].get_depth_image(frame)
-        
-        yolo_image = frame.copy()
-        output_image = depth_rgb.copy()
 
-        # yolo_output = self.model_yolo(frame, verbose=False)[0]
         yolo_output = self.models_yolo[self.model_yolo_type][self.complexity](frame, verbose=False)[0]
         
         if yolo_output.boxes is None:
             if self.side_by_side:
-                output_image = np.hstack((frame, output_image))
-            return output_image
+                output_image = np.hstack((frame, depth_rgb))
+            return depth_rgb
+        
+        yolo_image = frame.copy()
+        output_image = depth_rgb.copy()
 
-        if self.get_mean_method == get_mean_depth_mask and yolo_output.masks is not None:
+        if self.get_mean_depth[self.model_yolo_type] == get_mean_depth_mask and yolo_output.masks is not None:
             masks = scale_masks(yolo_output.masks.data.unsqueeze(1), yolo_output.boxes.orig_shape, padding=True)
         else:
             masks = np.zeros(len(yolo_output.boxes))
@@ -137,7 +136,7 @@ class iVision:
             cls = int(box.cls[0])
             conf = float(box.conf[0])
 
-            mean_depth, min_depth, max_depth = self.get_mean_method(depth_bw, box, mask_model)
+            mean_depth, min_depth, max_depth = self.get_mean_depth[self.model_yolo_type](depth_bw, box, mask_model)
             label = f"{self.yolo_classes[cls]} {conf:.2f} Depth:({mean_depth}, {min_depth}, {max_depth})"
 
             if self.side_by_side:
@@ -158,17 +157,19 @@ class iVision:
 
     def __camera_thread(self):
         print("-----Starting Camera Thread-----")
-        cap = cv2.VideoCapture(3, cv2.CAP_DSHOW)
+        cap = cv2.VideoCapture(self.cap_id, cv2.CAP_DSHOW)
 
         while self.IS_RUNNING:
             ret, frame = cap.read()
             if not ret:
                 print("ERROR: Failed to capture frame!")
-                assert False
+                self.IS_RUNNING = False
+                break
             
             with self.frame_lock:
                 self.frame = frame
-            time.sleep(0.001)
+            # time.sleep(0.001)
+            time.sleep(0)
         
         cap.release()
         print("-----Stopped Camera Thread-----")
@@ -193,12 +194,13 @@ class iVision:
             
             # if frame is None or np.array_equal(frame, prev_frame):
             if np.array_equal(frame, prev_frame):
-                time.sleep(0.001)
+                # time.sleep(0.001)
+                time.sleep(0)
                 continue
             prev_frame = frame
 
-            scene_type = scene_type_map[self.model_scene_narration.get_scene_type_binary(frame)]
-            complexity, weather, confidence = self.model_complexity_estimation.predict(scene_type, frame)
+            scene_type = scene_type_map[self.model_scene_classifier.get_scene_type_binary(frame)]
+            complexity, weather, confidence = self.model_complexity_estimator.predict(scene_type, frame)
 
             if scene_type not in scene_types_dict:
                 scene_types_dict[scene_type] = 0
@@ -237,7 +239,7 @@ class iVision:
 
     def __captioning_thread(self, frame):
         print("\n-----STARTING NARRATION-----")
-        narration_text = self.model_scene_narration.run_scene_narration(frame)
+        narration_text = self.model_scene_narrator.get_narration(frame, self.model_scene_classifier)
         print(f"Final Narration: {narration_text}")
         print("-----STOPPING NARRATION-----")
         self.IS_CAPTION_RUNNING = False
@@ -251,13 +253,14 @@ class iVision:
         prev_frame = np.zeros(1)
 
         print("-----Main Loop Started-----")
-        while True:
+        while self.IS_RUNNING:
             with self.frame_lock:
                 frame = self.frame.copy()
             
             # if frame is None or np.array_equal(frame, prev_frame):
             if np.array_equal(frame, prev_frame):
-                time.sleep(0.001)
+                # time.sleep(0.001)
+                time.sleep(0)
                 continue
             prev_frame = frame
             
@@ -285,5 +288,6 @@ if __name__ == "__main__":
         model_yolo_type="segment",
         model_depth_type="dpt_swin2_tiny_256",
         side_by_side=True,
-        debug=False
+        debug=False,
+        cap_id=0
     )
