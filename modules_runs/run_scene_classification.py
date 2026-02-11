@@ -1,6 +1,12 @@
 import cv2
 import line_profiler
-from scene_classification import SceneClassifier
+
+if __name__ == "__main__":
+    import sys
+    from pathlib import Path
+    sys.path.append(str(Path(__file__).resolve().parents[1]))
+
+from modules.scene_classification import SceneClassifier
 
 @line_profiler.profile
 def run_scene_classification():

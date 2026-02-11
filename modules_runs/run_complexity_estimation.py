@@ -1,6 +1,12 @@
 import cv2
 import line_profiler
-from complexity_estimation import SceneType, Complexity, ComplexityEstimator
+
+if __name__ == "__main__":
+    import sys
+    from pathlib import Path
+    sys.path.append(str(Path(__file__).resolve().parents[1]))
+
+from modules.complexity_estimation import SceneType, Complexity, ComplexityEstimator
 
 @line_profiler.profile
 def run_complexity_estimation():

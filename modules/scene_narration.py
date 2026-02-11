@@ -5,7 +5,7 @@ import numpy as np
 import line_profiler
 from PIL import Image
 from numpy import typing as npt
-from scene_classification import SceneClassifier
+from .scene_classification import SceneClassifier
 from transformers import BlipProcessor, BlipForConditionalGeneration, CLIPProcessor, CLIPModel
 
 class SceneNarrator:

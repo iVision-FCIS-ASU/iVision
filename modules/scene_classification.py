@@ -5,7 +5,7 @@ import line_profiler
 from PIL import Image
 from numpy import typing as npt
 import torchvision.transforms as transforms
-from utils.scene_mapping import INDOOR_CLASSES, OUTDOOR_MERGE_RULES
+from .utils.scene_mapping import INDOOR_CLASSES, OUTDOOR_MERGE_RULES
 
 class SceneClassifier:
     def __init__(self):

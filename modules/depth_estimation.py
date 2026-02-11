@@ -3,8 +3,8 @@ import torch
 import numpy as np
 import onnxruntime as ort
 from typing import Literal
-from midas.model_loader import model_paths, load_model
-from midas.model_processor import process, create_side_by_side
+from .midas.model_loader import model_paths, load_model
+from .midas.model_processor import process, create_side_by_side
 
 class MiDaS:
     def __init__(self, model_type: Literal["midas_v21_small_256", "dpt_swin2_tiny_256"]):

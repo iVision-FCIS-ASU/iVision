@@ -1,19 +1,19 @@
 import cv2
-import numpy as np
-from numpy import typing as npt
-import line_profiler
 import time
-import threading
 import torch
+import numpy as np
+import threading
+import line_profiler
 from typing import Literal
+from numpy import typing as npt
 from ultralytics import YOLO
 from ultralytics.utils.ops import scale_masks
 from models_download import download_models
-from depth_models import MiDaS, DepthAnythingV2
-from depth_helpers import get_mean_depth_box, get_mean_depth_mask
-from scene_classification import SceneClassifier
-from scene_narration import SceneNarrator
-from complexity_estimation import SceneType, Weather, Complexity, ComplexityEstimator
+from modules.depth_estimation import MiDaS, DepthAnythingV2
+from modules.utils.depth_estimation_helpers import get_mean_depth_box, get_mean_depth_mask
+from modules.complexity_estimation import SceneType, Weather, Complexity, ComplexityEstimator
+from modules.scene_classification import SceneClassifier
+from modules.scene_narration import SceneNarrator
 
 class iVision:
     def __init__(

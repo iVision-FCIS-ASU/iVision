@@ -4,8 +4,14 @@ import numpy as np
 import threading
 import line_profiler
 from numpy import typing as npt
-from scene_classification import SceneClassifier
-from scene_narration import SceneNarrator
+
+if __name__ == "__main__":
+    import sys
+    from pathlib import Path
+    sys.path.append(str(Path(__file__).resolve().parents[1]))
+
+from modules.scene_classification import SceneClassifier
+from modules.scene_narration import SceneNarrator
 
 IS_CAPTION_RUNNING = False
 

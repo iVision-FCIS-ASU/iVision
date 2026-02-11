@@ -3,7 +3,7 @@ import requests
 from tqdm import tqdm
 from pathlib import Path
 from ultralytics import YOLO
-from depth_anything_v2.dpt import DepthAnythingV2
+from modules.depth_anything_v2.dpt import DepthAnythingV2
 from transformers import BlipProcessor, BlipForConditionalGeneration, CLIPProcessor, CLIPModel
 
 def download_file(path: str, url: str):
