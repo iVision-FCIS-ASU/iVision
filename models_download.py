@@ -90,9 +90,9 @@ def download_models():
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-base", cache_dir="weights/blip", use_fast=True)
-    BlipForConditionalGeneration.from_pretrained("Salesforce/blip-image-captioning-base", cache_dir="weights/blip").to(device)
-    CLIPProcessor.from_pretrained("openai/clip-vit-base-patch16", cache_dir="weights/blip", use_fast=True)
-    CLIPModel.from_pretrained("openai/clip-vit-base-patch16", cache_dir="weights/blip").to(device)
+    # BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-base", cache_dir="weights/blip", use_fast=True)
+    # BlipForConditionalGeneration.from_pretrained("Salesforce/blip-image-captioning-base", cache_dir="weights/blip").to(device)
+    # CLIPProcessor.from_pretrained("openai/clip-vit-base-patch16", cache_dir="weights/blip", use_fast=True)
+    # CLIPModel.from_pretrained("openai/clip-vit-base-patch16", cache_dir="weights/blip").to(device)
 
     print("\n-----All Downloads Completed-----\n")

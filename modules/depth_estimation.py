@@ -1,8 +1,10 @@
 import cv2
 import torch
 import numpy as np
+import tensorflow as tf
 import onnxruntime as ort
 from typing import Literal
+from numpy import typing as npt
 from .midas.model_loader import model_paths, load_model
 from .midas.model_processor import process, create_side_by_side
 
@@ -26,71 +28,105 @@ class MiDaS:
 
 class DepthAnythingV2:
     def __init__(self):
-        self.sess = ort.InferenceSession(
-        "weights/depth_anything_v2_vits.onnx",
-        # providers=['CUDAExecutionProvider', 'CPUExecutionProvider']
-    )
+        # self.sess = ort.InferenceSession(
+        #     "weights/depth_anything_v2_vits.onnx",
+        #     # providers=['CUDAExecutionProvider', 'CPUExecutionProvider']
+        # )
+
+        self.interpreter = tf.lite.Interpreter("weights/depth_anything_v2_256_w8a16.tflite", num_threads=4)
+        self.interpreter.allocate_tensors()
+        self.input_index = self.interpreter.get_input_details()[0]["index"]
+        self.output_index = self.interpreter.get_output_details()[0]["index"]
+
+    # @staticmethod
+    # def __preprocess(frame, target_size=518):
+    #     """Resize to square, normalize, convert to NCHW float32"""
+    #     img = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    #     h, w = img.shape[:2]
+    #     scale = target_size / max(h, w)
+    #     new_h, new_w = int(h * scale), int(w * scale)
+    #     resized = cv2.resize(img, (new_w, new_h))
+
+    #     # pad to square (center)
+    #     top = (target_size - new_h) // 2
+    #     bottom = target_size - new_h - top
+    #     left = (target_size - new_w) // 2
+    #     right = target_size - new_w - left
+    #     padded = cv2.copyMakeBorder(resized, top, bottom, left, right, cv2.BORDER_CONSTANT, value=0)
+
+    #     # normalize
+    #     padded = padded.astype(np.float32) / 255.0
+    #     padded = padded.transpose(2, 0, 1)[None, ...]  # (1,3,H,W)
+    #     return padded, (h, w), (top, bottom, left, right)
 
     @staticmethod
-    def __preprocess(frame, target_size=518):
-        """Resize to square, normalize, convert to NCHW float32"""
-        img = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        h, w = img.shape[:2]
-        scale = target_size / max(h, w)
-        new_h, new_w = int(h * scale), int(w * scale)
-        resized = cv2.resize(img, (new_w, new_h))
+    def __preprocess(frame: npt.NDArray) -> tuple[npt.NDArray, tuple[int, int]]:
+        image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        image = cv2.resize(image, (256, 256))
+        image = image.astype(np.float32) / 255.0
+        image = np.expand_dims(image, axis=0)
 
-        # pad to square (center)
-        top = (target_size - new_h) // 2
-        bottom = target_size - new_h - top
-        left = (target_size - new_w) // 2
-        right = target_size - new_w - left
-        padded = cv2.copyMakeBorder(resized, top, bottom, left, right, cv2.BORDER_CONSTANT, value=0)
+        return image, frame.shape[:2]
 
-        # normalize
-        padded = padded.astype(np.float32) / 255.0
-        padded = padded.transpose(2, 0, 1)[None, ...]  # (1,3,H,W)
-        return padded, (h, w), (top, bottom, left, right)
+    # @staticmethod
+    # def __postprocess(depth, orig_shape, pad_info, target_size=518):
+    #     """Remove padding and resize back to original aspect ratio"""
+    #     top, bottom, left, right = pad_info
+    #     depth = depth[top:target_size-bottom, left:target_size-right]
+    #     depth = cv2.resize(depth, (orig_shape[1], orig_shape[0]), interpolation=cv2.INTER_CUBIC)
+    #     return depth
 
     @staticmethod
-    def __postprocess(depth, orig_shape, pad_info, target_size=518):
-        """Remove padding and resize back to original aspect ratio"""
-        top, bottom, left, right = pad_info
-        depth = depth[top:target_size-bottom, left:target_size-right]
-        depth = cv2.resize(depth, (orig_shape[1], orig_shape[0]), interpolation=cv2.INTER_CUBIC)
-        return depth
+    def __postprocess(depth_raw: npt.NDArray, orig_shape: tuple[int, int]) -> npt.NDArray:
+        depth_img = np.squeeze(depth_raw)
+        depth_img = cv2.resize(depth_img, (orig_shape[1], orig_shape[0]), interpolation=cv2.INTER_CUBIC)
+        depth_img = cv2.normalize(depth_img, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
 
-    def get_depth_image(self, frame):
-        inp, orig_shape, pad_info = self.__preprocess(frame)
+        return depth_img
 
-        # Run ONNX inference
-        outputs = self.sess.run(None, {"input": inp})
-        # print("Output shape:", outputs[0].shape)
-        # depth_raw = outputs[0][0, 0]  # shape (H, W)
+    # def get_depth_image(self, frame):
+    #     inp, orig_shape, pad_info = self.__preprocess(frame)
 
-        out = outputs[0]               # ONNX outputs list -> first output
-        # collapse singleton dims so we end up with a 2D HxW depth map
-        depth_raw = np.squeeze(out)    # works for (1,1,H,W), (1,H,W), (H,W), (1,H*W) if square-ish
+    #     # Run ONNX inference
+    #     outputs = self.sess.run(None, {"input": inp})
+    #     # print("Output shape:", outputs[0].shape)
+    #     # depth_raw = outputs[0][0, 0]  # shape (H, W)
 
-        # sanity check
-        if depth_raw.ndim != 2:
-            # fallback: try reshaping flattened vector into square
-            if depth_raw.ndim == 1:
-                side = int(np.sqrt(depth_raw.shape[0]))
-                if side * side == depth_raw.shape[0]:
-                    depth_raw = depth_raw.reshape(side, side)
-                else:
-                    raise ValueError(f"Can't reshape flattened output of size {depth_raw.shape[0]} into square.")
-            else:
-                raise ValueError(f"Unexpected depth map shape after squeeze: {depth_raw.shape}")
+    #     out = outputs[0]               # ONNX outputs list -> first output
+    #     # collapse singleton dims so we end up with a 2D HxW depth map
+    #     depth_raw = np.squeeze(out)    # works for (1,1,H,W), (1,H,W), (H,W), (1,H*W) if square-ish
+
+    #     # sanity check
+    #     if depth_raw.ndim != 2:
+    #         # fallback: try reshaping flattened vector into square
+    #         if depth_raw.ndim == 1:
+    #             side = int(np.sqrt(depth_raw.shape[0]))
+    #             if side * side == depth_raw.shape[0]:
+    #                 depth_raw = depth_raw.reshape(side, side)
+    #             else:
+    #                 raise ValueError(f"Can't reshape flattened output of size {depth_raw.shape[0]} into square.")
+    #         else:
+    #             raise ValueError(f"Unexpected depth map shape after squeeze: {depth_raw.shape}")
 
 
-        # Postprocess: remove padding + restore original shape
-        depth_resized = self.__postprocess(depth_raw, orig_shape, pad_info)
+    #     # Postprocess: remove padding + restore original shape
+    #     depth_resized = self.__postprocess(depth_raw, orig_shape, pad_info)
 
-        # Normalize for display
-        depth_norm = cv2.normalize(depth_resized, None, 0, 255, cv2.NORM_MINMAX).astype('uint8')
-        depth_colored = cv2.applyColorMap(depth_norm, cv2.COLORMAP_JET)
+    #     # Normalize for display
+    #     depth_norm = cv2.normalize(depth_resized, None, 0, 255, cv2.NORM_MINMAX).astype('uint8')
+    #     depth_colored = cv2.applyColorMap(depth_norm, cv2.COLORMAP_JET)
 
-        # return depth_colored
-        return depth_norm, depth_colored
+    #     # return depth_colored
+    #     return depth_norm, depth_colored
+
+    def get_depth_image(self, frame: npt.NDArray) -> tuple[npt.NDArray, npt.NDArray]:
+        image, orig_shape = self.__preprocess(frame)
+
+        self.interpreter.set_tensor(self.input_index, image)
+        self.interpreter.invoke()
+        depth_raw = self.interpreter.get_tensor(self.output_index)
+
+        depth_bw = self.__postprocess(depth_raw, orig_shape)
+        depth_colored = cv2.applyColorMap(depth_bw, cv2.COLORMAP_JET)
+
+        return depth_bw, depth_colored

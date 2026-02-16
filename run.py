@@ -85,7 +85,8 @@ class iVision:
         
         print("-----Loading Depth Estimation-----")
         self.models_depth = {
-            Complexity.SIMPLE: MiDaS("midas_v21_small_256"),
+            # Complexity.SIMPLE: MiDaS("midas_v21_small_256"),
+            Complexity.SIMPLE: DepthAnythingV2(),
             # Complexity.COMPLEX: MiDaS("dpt_swin2_tiny_256")
         }
 

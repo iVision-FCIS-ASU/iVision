@@ -1,0 +1,4 @@
+1. try to export different versions of depthanythingv2.tflite to check the true performance bottleneck
+2. if this version of depthanythingv2 is the ideal one, remove the commented (redundant old onnx version) code from depth_estimation.py, and update run.py depth model selection
+3. change download link of depthanythingv2 to new better version (from onnx to tflite)
+4. test grid technique for warning system
