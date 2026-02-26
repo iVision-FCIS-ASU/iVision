@@ -6,6 +6,7 @@ from scipy.cluster.hierarchy import DisjointSet
 from shapely.geometry import box, Polygon
 from shapely.ops import unary_union
 from modules.depth_estimation import DepthAnythingV2
+from modules.object_detection import ObjectDetector
 
 class Grid:
     def __init__(
@@ -40,6 +41,8 @@ class Grid:
 
         self.__create_grid_points()
         self.grid_set = DisjointSet()
+
+        self.polygon_centroids: None | list[tuple[int, int]] = None
 
     def __create_grid_points(self):
         grid_size_x, grid_size_y = self.grid_size
@@ -148,21 +151,21 @@ class Grid:
             cv2.circle(output_img, centroid, radius=self.obstacle_centroid_radius, color=self.color, thickness=-1)
             cv2.polylines(output_img, [coords], isClosed=False, color=self.color, thickness=self.obstacle_thickness)
 
-    def get_obstacle_centroids(self) -> list[tuple[int, int]]:
-        "returns (x, y) coords of obstacles, must be run after .draw_grid"
+    def get_obstacle_centroids(self) -> None | list[tuple[int, int]]:
         return self.polygon_centroids
 
-    def draw_grid(self, depth_bw: npt.NDArray, depth_rgb: npt.NDArray) -> npt.NDArray:
-        output_img = cv2.cvtColor(depth_bw, cv2.COLOR_GRAY2BGR)
-
+    def draw_grid(self, output_img: npt.NDArray, depth_bw: npt.NDArray, depth_rgb: npt.NDArray) -> npt.NDArray:
+        # output_img = cv2.cvtColor(depth_bw, cv2.COLOR_GRAY2BGR)
+        # pass
         self.__draw_overlays(depth_bw, output_img)
         self.__draw_gridlines(output_img)
         self.__draw_connected_grids(output_img)
 
-        return output_img
+        # return output_img
 
 def run_grid_test():
     depth_model = DepthAnythingV2()
+    yolo_model = ObjectDetector()
 
     cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
     w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -178,9 +181,24 @@ def run_grid_test():
             break
 
         depth_bw, depth_rgb = depth_model.get_depth_image(frame)
-        output_image = grid.draw_grid(depth_bw, depth_rgb)
-        cv2.imshow("Grid Test", output_image)
+        yolo_image = frame.copy()
+        output_image = cv2.cvtColor(depth_bw, cv2.COLOR_GRAY2BGR)
+        # grid.draw_grid(output_img, depth_bw, depth_rgb)
+        boxes, masks, centroids = yolo_model.get_objects(frame, ObjectDetector.ModelType.YOLO_SEGMENT)
+        yolo_model.draw_objects(yolo_image)
+        yolo_model.draw_objects_with_depth(output_image, depth_bw, draw_masks=True)
+
+        depth_bw_without_objects = depth_bw.copy()
+        if masks is not None:
+            for mask in masks:
+                depth_bw_without_objects[mask] = 0
+        grid.draw_grid(output_image, depth_bw_without_objects, depth_rgb)
         
+        # output_img = (frame * 0.5) + (cv2.cvtColor(depth_bw, cv2.COLOR_GRAY2BGR) * 0.5)
+        # output_img = output_img.astype(dtype=np.uint8)
+        output_image = np.hstack((yolo_image, output_image))
+        cv2.imshow(f"Grid Test {output_image.shape}", output_image)
+
         # obstacle_centroids = grid.get_obstacle_centroids()
         # print(f"Obstacle centroids (x, y): {obstacle_centroids}")
 

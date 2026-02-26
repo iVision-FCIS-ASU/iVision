@@ -6,11 +6,9 @@ import threading
 import line_profiler
 from typing import Literal
 from numpy import typing as npt
-from ultralytics import YOLO
-from ultralytics.utils.ops import scale_masks
 from models_download import download_models
+from modules.object_detection import ObjectDetector
 from modules.depth_estimation import MiDaS, DepthAnythingV2
-from modules.utils.depth_estimation_helpers import get_mean_depth_box, get_mean_depth_mask
 from modules.complexity_estimation import SceneType, Weather, Complexity, ComplexityEstimator
 from modules.scene_classification import SceneClassifier
 from modules.scene_narration import SceneNarrator
@@ -65,23 +63,12 @@ class iVision:
             assert False
 
         print("-----Loading YOLO-----")
+        self.model_object_detector = ObjectDetector()
+
         self.models_yolo = {
-            "detect": {
-                Complexity.SIMPLE: YOLO("weights/yolo26n.onnx", task="detect"),
-                Complexity.COMPLEX: YOLO("weights/yolo26n.onnx", task="detect")
-            },
-            "segment": {
-                Complexity.SIMPLE: YOLO("weights/yolo26n-seg.onnx", task="segment"),
-                Complexity.COMPLEX: YOLO("weights/yolo26n-seg.onnx", task="segment")
-            }
+            Complexity.SIMPLE: ObjectDetector.ModelType.YOLO_SEGMENT,
+            Complexity.COMPLEX: ObjectDetector.ModelType.YOLO_SEGMENT
         }
-
-        self.get_mean_depth = { 
-            "detect": get_mean_depth_box,
-            "segment": get_mean_depth_mask
-        }
-
-        self.yolo_classes = self.models_yolo[self.model_yolo_type][Complexity.SIMPLE].names
         
         print("-----Loading Depth Estimation-----")
         self.models_depth = {
@@ -114,45 +101,24 @@ class iVision:
             complexity = self.complexity
             scene_type = self.scene_type
             weather = self.weather
-
-        depth_bw, depth_rgb = self.models_depth[complexity].get_depth_image(frame)
-
-        yolo_output = self.models_yolo[self.model_yolo_type][self.complexity](frame, verbose=False)[0]
         
-        if yolo_output.boxes is None:
-            if self.side_by_side:
-                output_image = np.hstack((frame, depth_rgb))
-            return depth_rgb
+        depth_bw, depth_rgb = self.models_depth[complexity].get_depth_image(frame)
+        boxes, masks, centroids = self.model_object_detector.get_objects(frame, self.models_yolo[complexity])
         
         yolo_image = frame.copy()
-        output_image = depth_rgb.copy()
+        # output_image = depth_rgb.copy()
+        output_image = cv2.cvtColor(depth_bw, cv2.COLOR_GRAY2BGR)
 
-        if self.get_mean_depth[self.model_yolo_type] == get_mean_depth_mask and yolo_output.masks is not None:
-            masks = scale_masks(yolo_output.masks.data.unsqueeze(1), yolo_output.boxes.orig_shape, padding=True)
-        else:
-            masks = np.zeros(len(yolo_output.boxes))
-
-        for box, mask_model in zip(yolo_output.boxes, masks):
-            x1, y1, x2, y2 = map(int, box.xyxy[0])
-            cls = int(box.cls[0])
-            conf = float(box.conf[0])
-
-            mean_depth, min_depth, max_depth = self.get_mean_depth[self.model_yolo_type](depth_bw, box, mask_model)
-            label = f"{self.yolo_classes[cls]} {conf:.2f} Depth:({mean_depth}, {min_depth}, {max_depth})"
-
-            if self.side_by_side:
-                # cv2.putText(frame, f"{complexity.name}: {weather} ({confidence:.2f})", (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-                cv2.putText(frame, f"{complexity.name}, {scene_type.name}, {weather.name}", (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-                if isinstance(mask_model, torch.Tensor):
-                    mask = mask_model[0].cpu().numpy() > 0.5
-                    yolo_image[mask] = yolo_image[mask] * 0.5 + np.array([0, 255, 0], dtype=np.uint8) * 0.5
-                cv2.rectangle(yolo_image, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                cv2.putText(yolo_image, label, (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
-            cv2.rectangle(output_image, (x1, y1), (x2, y2), (0, 255, 0), 2)
-            cv2.putText(output_image, label, (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+        cv2.putText(frame, f"{complexity.name}, {scene_type.name}, {weather.name}", 
+                    (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+        
+        self.model_object_detector.draw_objects(yolo_image)
+        # self.model_object_detector.draw_objects_with_depth(output_image, depth_bw)
+        self.model_object_detector.draw_objects_with_depth(output_image, depth_bw, True)
 
         if self.side_by_side:
-            output_image = np.vstack((np.hstack((frame, yolo_image)), np.hstack((depth_rgb, output_image))))
+            # output_image = np.vstack((np.hstack((frame, yolo_image)), np.hstack((depth_rgb, output_image))))
+            output_image = np.vstack((np.hstack((frame, yolo_image)), np.hstack((cv2.cvtColor(depth_bw, cv2.COLOR_GRAY2BGR), output_image))))
 
         return output_image
 
@@ -287,7 +253,7 @@ class iVision:
 if __name__ == "__main__":
     iVision(
         model_yolo_type="segment",
-        model_depth_type="dpt_swin2_tiny_256",
+        model_depth_type="depth_anything_v2",
         side_by_side=True,
         debug=False,
         cap_id=0
