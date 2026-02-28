@@ -8,7 +8,7 @@ from typing import Literal
 from numpy import typing as npt
 from models_download import download_models
 from modules.object_detection import ObjectDetector
-from modules.depth_estimation import MiDaS, DepthAnythingV2
+from modules.depth_estimation import DepthEstimator
 from modules.complexity_estimation import SceneType, Weather, Complexity, ComplexityEstimator
 from modules.scene_classification import SceneClassifier
 from modules.scene_narration import SceneNarrator
@@ -16,8 +16,8 @@ from modules.scene_narration import SceneNarrator
 class iVision:
     def __init__(
         self, 
-        model_yolo_type: Literal["detect", "segment"],
-        model_depth_type: Literal["midas_v21_small_256", "dpt_swin2_tiny_256", "depth_anything_v2"],
+        model_yolo_type: tuple[ObjectDetector.ModelType, ObjectDetector.ModelType],
+        model_depth_type: tuple[DepthEstimator.ModelType, DepthEstimator.ModelType],
         side_by_side: bool = False,
         debug: bool = False,
         cap_id: int = 0
@@ -26,8 +26,8 @@ class iVision:
         print("-----iVision Started-----")
         print("=========================\n")
 
-        self.model_yolo_type = model_yolo_type
-        self.model_depth_type = model_depth_type
+        self.model_yolo_type_simple, self.model_yolo_type_complex = model_yolo_type
+        self.model_depth_type_simple, self.model_depth_type_complex = model_depth_type
         self.side_by_side = side_by_side
         self.debug = debug
         self.cap_id = cap_id
@@ -52,38 +52,20 @@ class iVision:
 
     def __get_models(self):
         print("\n-----Loading Models-----\n")
-        yolo_types = ["detect", "segment"]
-        if self.model_yolo_type not in yolo_types:
-            print("ERROR: Invalid YOLO Model!")
-            assert False
-        
-        depth_types = ["midas_v21_small_256", "dpt_swin2_tiny_256", "depth_anything_v2"]
-        if self.model_depth_type not in depth_types:
-            print("ERROR: Invalid Depth Model!")
-            assert False
 
         print("-----Loading YOLO-----")
         self.model_object_detector = ObjectDetector()
-
         self.models_yolo = {
-            Complexity.SIMPLE: ObjectDetector.ModelType.YOLO_SEGMENT,
-            Complexity.COMPLEX: ObjectDetector.ModelType.YOLO_SEGMENT
+            Complexity.SIMPLE: self.model_yolo_type_simple,
+            Complexity.COMPLEX: self.model_yolo_type_complex
         }
         
         print("-----Loading Depth Estimation-----")
+        self.model_depth_estimator = DepthEstimator()
         self.models_depth = {
-            # Complexity.SIMPLE: MiDaS("midas_v21_small_256"),
-            Complexity.SIMPLE: DepthAnythingV2(),
-            # Complexity.COMPLEX: MiDaS("dpt_swin2_tiny_256")
+            Complexity.SIMPLE: self.model_depth_type_simple,
+            Complexity.COMPLEX: self.model_depth_type_complex
         }
-
-        match self.model_depth_type:
-            case "midas_v21_small_256":
-                self.models_depth[Complexity.COMPLEX] = MiDaS(self.model_depth_type)
-            case "dpt_swin2_tiny_256":
-                self.models_depth[Complexity.COMPLEX] = MiDaS(self.model_depth_type)
-            case "depth_anything_v2":
-                self.models_depth[Complexity.COMPLEX] = DepthAnythingV2()
         
         print("-----Loading Complexity Estimation-----")
         self.model_complexity_estimator = ComplexityEstimator()
@@ -102,23 +84,22 @@ class iVision:
             scene_type = self.scene_type
             weather = self.weather
         
-        depth_bw, depth_rgb = self.models_depth[complexity].get_depth_image(frame)
+        depth_bw, depth_rgb = self.model_depth_estimator.get_depth_image(frame, self.models_depth[complexity])
         boxes, masks, centroids = self.model_object_detector.get_objects(frame, self.models_yolo[complexity])
         
-        yolo_image = frame.copy()
         # output_image = depth_rgb.copy()
         output_image = cv2.cvtColor(depth_bw, cv2.COLOR_GRAY2BGR)
+        self.model_object_detector.draw_objects_with_depth(output_image, depth_bw, True)
+        
+        if not self.side_by_side:
+            return output_image
 
+        yolo_image = frame.copy()
         cv2.putText(frame, f"{complexity.name}, {scene_type.name}, {weather.name}", 
                     (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-        
         self.model_object_detector.draw_objects(yolo_image)
-        # self.model_object_detector.draw_objects_with_depth(output_image, depth_bw)
-        self.model_object_detector.draw_objects_with_depth(output_image, depth_bw, True)
-
-        if self.side_by_side:
-            # output_image = np.vstack((np.hstack((frame, yolo_image)), np.hstack((depth_rgb, output_image))))
-            output_image = np.vstack((np.hstack((frame, yolo_image)), np.hstack((cv2.cvtColor(depth_bw, cv2.COLOR_GRAY2BGR), output_image))))
+        output_image = np.vstack((np.hstack((frame, yolo_image)), 
+                                  np.hstack((cv2.cvtColor(depth_bw, cv2.COLOR_GRAY2BGR), output_image))))
 
         return output_image
 
@@ -189,7 +170,7 @@ class iVision:
                 max_complexity: Complexity = max(predictions_dict, key=predictions_dict.get)
                 predictions_dict.clear()
 
-                print(f"\nScene: {max_scene_type}\nWeather: {max_weather.name}\nComplexity: {max_complexity.name}\n")
+                # print(f"\nScene: {max_scene_type}\nWeather: {max_weather.name}\nComplexity: {max_complexity.name}\n")
                 
                 with self.complexity_lock:
                     self.complexity = max_complexity
@@ -252,8 +233,8 @@ class iVision:
 
 if __name__ == "__main__":
     iVision(
-        model_yolo_type="segment",
-        model_depth_type="depth_anything_v2",
+        model_yolo_type=(ObjectDetector.ModelType.YOLO_SEGMENT, ObjectDetector.ModelType.YOLO_SEGMENT),
+        model_depth_type=(DepthEstimator.ModelType.DEPTH_ANYTHING_V2, DepthEstimator.ModelType.DEPTH_ANYTHING_V2),
         side_by_side=True,
         debug=False,
         cap_id=0

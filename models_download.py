@@ -37,11 +37,11 @@ def download_models():
 
     if not Path("weights/yolo26n.onnx").is_file():
         model_detect = YOLO("weights/yolo26n.pt", task="detect")
-        model_detect.export(format="onnx")
+        model_detect.export(format="onnx", dynamic=True)
     
     if not Path("weights/yolo26n-seg.onnx").is_file():
-        model_detect = YOLO("weights/yolo26n-seg.pt", task="segment")
-        model_detect.export(format="onnx")
+        model_segment = YOLO("weights/yolo26n-seg.pt", task="segment")
+        model_segment.export(format="onnx", dynamic=True)
     
     if not Path("weights/midas_v21_small_256.pt").is_file():
         download_file("weights/midas_v21_small_256.pt", "https://github.com/isl-org/MiDaS/releases/download/v2_1/midas_v21_small_256.pt")

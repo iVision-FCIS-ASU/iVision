@@ -1,10 +1,9 @@
 1. test grid technique for warning system
 2. fine-tune the grid parameters further, and check if there are more (or better) parameters to add
-// 3. try different ways to threshold grids (instead of np.mean over grid, try to check if a percentage of the grid is over an intensity threshold)
-4. try to export different versions of depthanythingv2.tflite to check the true performance bottleneck
-5. if this version of depthanythingv2 is the ideal one, remove the commented (redundant old onnx version) code from depth_estimation.py, and update run.py depth model selection
-6. change download link of depthanythingv2 to new better version (from onnx to tflite)
-// 7. update YOLO code for better modularity
-8. fix minor complexity prediction bug (get complexity by most repeated weather instead of most repeated complexity)
-9. improve depth estimation modularity (just like object detection)
-10. figure out MiDaS v2 small preprocessing and postprocessing (to apply to new tflite version)
+3. try to export different versions of depthanythingv2.tflite to check the true performance bottleneck
+4. if this version of depthanythingv2 is the ideal one, remove the commented (redundant old onnx version) code from depth_estimation.py, and update run.py depth model selection
+5. change download link of depthanythingv2 to new better version (from onnx to tflite)
+6. fix minor complexity prediction bug (get complexity by most repeated weather instead of most repeated complexity)
+7. improve depth estimation modularity (just like object detection, PARTIALLY COMPLETED)
+8. figure out MiDaS v2 small preprocessing and postprocessing (to apply PERFECTLY to new tflite version)
+9. add optional debug statements (for later, very low priority)

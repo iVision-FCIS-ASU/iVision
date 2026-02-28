@@ -5,8 +5,8 @@ from numpy import typing as npt
 from scipy.cluster.hierarchy import DisjointSet
 from shapely.geometry import box, Polygon
 from shapely.ops import unary_union
-from modules.depth_estimation import DepthAnythingV2
 from modules.object_detection import ObjectDetector
+from modules.depth_estimation import DepthEstimator
 
 class Grid:
     def __init__(
@@ -155,17 +155,13 @@ class Grid:
         return self.polygon_centroids
 
     def draw_grid(self, output_img: npt.NDArray, depth_bw: npt.NDArray, depth_rgb: npt.NDArray) -> npt.NDArray:
-        # output_img = cv2.cvtColor(depth_bw, cv2.COLOR_GRAY2BGR)
-        # pass
         self.__draw_overlays(depth_bw, output_img)
         self.__draw_gridlines(output_img)
         self.__draw_connected_grids(output_img)
 
-        # return output_img
-
 def run_grid_test():
-    depth_model = DepthAnythingV2()
     yolo_model = ObjectDetector()
+    depth_model = DepthEstimator()
 
     cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
     w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -180,10 +176,10 @@ def run_grid_test():
             print("ERROR: Failed to capture frame!")
             break
 
-        depth_bw, depth_rgb = depth_model.get_depth_image(frame)
+        depth_bw, depth_rgb = depth_model.get_depth_image(frame, DepthEstimator.ModelType.DEPTH_ANYTHING_V2)
         yolo_image = frame.copy()
         output_image = cv2.cvtColor(depth_bw, cv2.COLOR_GRAY2BGR)
-        # grid.draw_grid(output_img, depth_bw, depth_rgb)
+        
         boxes, masks, centroids = yolo_model.get_objects(frame, ObjectDetector.ModelType.YOLO_SEGMENT)
         yolo_model.draw_objects(yolo_image)
         yolo_model.draw_objects_with_depth(output_image, depth_bw, draw_masks=True)
@@ -193,9 +189,7 @@ def run_grid_test():
             for mask in masks:
                 depth_bw_without_objects[mask] = 0
         grid.draw_grid(output_image, depth_bw_without_objects, depth_rgb)
-        
-        # output_img = (frame * 0.5) + (cv2.cvtColor(depth_bw, cv2.COLOR_GRAY2BGR) * 0.5)
-        # output_img = output_img.astype(dtype=np.uint8)
+
         output_image = np.hstack((yolo_image, output_image))
         cv2.imshow(f"Grid Test {output_image.shape}", output_image)
 

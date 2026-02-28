@@ -72,7 +72,9 @@ def create_side_by_side(image, depth, grayscale):
 
     depth_bw = np.repeat(np.expand_dims(normalized_depth, 2), 3, axis=2) / 3
     depth_bw = np.uint8(depth_bw)
-    depth_rgb = cv2.applyColorMap(depth_bw, cv2.COLORMAP_INFERNO)
+    # depth_rgb = cv2.applyColorMap(depth_bw, cv2.COLORMAP_INFERNO)
+    depth_bw = cv2.cvtColor(depth_bw, cv2.COLOR_BGR2GRAY)
+    depth_rgb = cv2.applyColorMap(depth_bw, cv2.COLORMAP_JET)
 
     if image is None:
         return depth_bw, depth_rgb

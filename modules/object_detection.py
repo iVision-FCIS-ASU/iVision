@@ -33,6 +33,8 @@ class ObjectDetector:
             self.ModelType.YOLO_SEGMENT: self.models[self.ModelType.YOLO_SEGMENT].names
         }
 
+        self.model_types = { model_type.value for model_type in ObjectDetector.ModelType }
+
         self.model_type: None | ObjectDetector.ModelType = None
         self.boxes: None | list[tuple[int, int, int, int, int, float]] = None
         self.masks: None | list[npt.NDArray] = None
@@ -49,10 +51,11 @@ class ObjectDetector:
     def get_objects(
         self, 
         frame: npt.NDArray, 
-        model_yolo_type: ObjectDetector.ModelType
+        model_yolo_type: ObjectDetector.ModelType,
+        imgsz: int = 320
     ) -> tuple[None | list[tuple[int, int, int, int, int, float]], None | list[npt.NDArray], list[tuple[int, int]]]:
         self.model_type = model_yolo_type
-        output = self.models[self.model_type](frame, verbose=False)[0]
+        output = self.models[self.model_type](frame, verbose=False, imgsz=imgsz)[0]
 
         if output.boxes is None:
             self.boxes = None
