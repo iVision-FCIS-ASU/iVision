@@ -1,9 +1,14 @@
-1. test grid technique for warning system
-2. fine-tune the grid parameters further, and check if there are more (or better) parameters to add
-3. try to export different versions of depthanythingv2.tflite to check the true performance bottleneck
-4. if this version of depthanythingv2 is the ideal one, remove the commented (redundant old onnx version) code from depth_estimation.py, and update run.py depth model selection
-5. change download link of depthanythingv2 to new better version (from onnx to tflite)
-6. fix minor complexity prediction bug (get complexity by most repeated weather instead of most repeated complexity)
-7. improve depth estimation modularity (just like object detection, PARTIALLY COMPLETED)
-8. figure out MiDaS v2 small preprocessing and postprocessing (to apply PERFECTLY to new tflite version)
-9. add optional debug statements (for later, very low priority)
+1.  test slightly advanced grid technique for warning system (warnings will still be hardcoded to specific mXn grid)
+2.  brainstorm variations and alternatives to grid technique for warning system (also think about obstacle persistence)
+3.  figure out midas_v21_small preprocessing and postprocessing (to apply PERFECTLY to new tflite version, CHECK OUT new idea from MobileViT conversion success)
+4.  make sure DepthAnythingV2's pre/post-processing was correctly implemented (after gaining new knowledge from MobileViT conversion success)
+5.  implement queues/dicts (sliding window) alternative for complexity estimation predictions
+6.  merge grid obstacle detector to current pipeline
+7.  merge grid warning system (if it turns out well) to current pipeline
+8.  download and test FastVLM locally
+9.  test metric depth models (metric DepthAnythingV2, metric VideoDepthAnything)
+10. in object_detection.py, switch from using "None" everywhere to empty lists
+11. fine-tune sliding window complexity estimation parameters
+12. fine-tune indoor complexity estimation (luminance map) parameters further
+13. fine-tune the grid parameters further, and check if there are more (or better) parameters to add
+14. add optional debug statements (for later, very low priority)
