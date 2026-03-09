@@ -19,10 +19,14 @@ def run_scene_classification():
             print("ERROR: Failed to capture frame!")
             break
 
-        scene_binary, scene = model.get_scene_type(frame)
+        # scene_binary = model.get_scene_type_binary(frame)
+        # label = f"{scene_binary}"
 
-        cv2.putText(frame, f"{scene_binary}: {scene}", (20, 40), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+        scene_binary, scene = model.get_scene_type(frame)
+        label = f"{scene_binary}: {scene}"
+        
+        cv2.putText(frame, label, (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 5)
+        cv2.putText(frame, label, (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
 
         cv2.imshow("Scene Understanding", frame)
 

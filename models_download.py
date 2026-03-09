@@ -3,7 +3,6 @@ import requests
 from tqdm import tqdm
 from pathlib import Path
 from ultralytics import YOLO
-from modules.depth_anything_v2.dpt import DepthAnythingV2
 from transformers import BlipProcessor, BlipForConditionalGeneration, CLIPProcessor, CLIPModel
 
 def download_file(path: str, url: str):
@@ -48,51 +47,19 @@ def download_models():
 
     if not Path("weights/dpt_swin2_tiny_256.pt").is_file():
         download_file("weights/dpt_swin2_tiny_256.pt", "https://github.com/isl-org/MiDaS/releases/download/v3_1/dpt_swin2_tiny_256.pt")
-    
-    # if not Path("weights/depth_anything_v2_vits.onnx").is_file():
-    #     if not Path("weights/depth_anything_v2_vits.pth").is_file():
-    #         download_file("weights/depth_anything_v2_vits.pth", "https://huggingface.co/depth-anything/Depth-Anything-V2-Small/resolve/main/depth_anything_v2_vits.pth?download=true")
-    #     else:
-    #         print("weights/depth_anything_v2_vits.pth already exists!")
-        
-    #     print("Exporting to ONNX format...")
-    #     model = DepthAnythingV2(encoder="vits", features=64, out_channels=[48,96,192,384])
-    #     model.load_state_dict(torch.load("weights/depth_anything_v2_vits.pth", map_location="cpu"))
-    #     model.eval()
-    #     dummy = torch.randn(1, 3, 518, 518)
 
-    #     with torch.no_grad():
-    #         torch.onnx.export(
-    #             model, dummy, "weights/depth_anything_v2_vits.onnx",
-    #             input_names=['input'], output_names=['output'],
-    #             opset_version=16,
-    #             do_constant_folding=True,
-    #             dynamic_axes={
-    #                 'input': {0: 'batch', 2: 'height', 3: 'width'},
-    #                 'output': {0: 'batch', 2: 'height', 3: 'width'}
-    #             },
-    #             export_params=True,
-    #             keep_initializers_as_inputs=False,
-    #         )
-    #     print("Exported to weights/depth_anything_v2_vits.onnx")
+    huggingface_file_names = [
+        "midas_v21_small_256.tflite",
+        "depth_anything_v2_224.tflite",
+        "complexity_estimation_v1.tflite",
+        "best_mobilevit_merged.tflite",
+        "best_mobilevit_indoor.tflite",
+        "best_mobilevit_outdoor.tflite"
+    ]
 
-    if not Path("weights/midas_v21_small_256.tflite").is_file():
-        download_file("weights/midas_v21_small_256.tflite", "https://huggingface.co/Devil-Assassin/wandering-mode/resolve/main/midas_v21_small_256.tflite?download=true")
-    
-    if not Path("weights/depth_anything_v2_224.tflite").is_file():
-        download_file("weights/depth_anything_v2_224.tflite", "https://huggingface.co/Devil-Assassin/wandering-mode/resolve/main/depth_anything_v2_224.tflite?download=true")
-    
-    if not Path("weights/complexity_estimation_v1.tflite").is_file():
-        download_file("weights/complexity_estimation_v1.tflite", "https://huggingface.co/Devil-Assassin/wandering-mode/resolve/main/complexity_estimation_v1.tflite?download=true")
-
-    if not Path("weights/best_mobilevit_merged.pth").is_file():
-        download_file("weights/best_mobilevit_merged.pth", "https://huggingface.co/Devil-Assassin/wandering-mode/resolve/main/best_mobilevit_merged.pth?download=true")
-    
-    if not Path("weights/best_mobilevit_indoor.pth").is_file():
-        download_file("weights/best_mobilevit_indoor.pth", "https://huggingface.co/Devil-Assassin/wandering-mode/resolve/main/best_mobilevit_indoor.pth?download=true")
-    
-    if not Path("weights/best_mobilevit_outdoor.pth").is_file():
-        download_file("weights/best_mobilevit_outdoor.pth", "https://huggingface.co/Devil-Assassin/wandering-mode/resolve/main/best_mobilevit_outdoor.pth?download=true")
+    for file_name in huggingface_file_names:
+        if not Path(f"weights/{file_name}").is_file():
+            download_file(f"weights/{file_name}", f"https://huggingface.co/Devil-Assassin/wandering-mode/resolve/main/{file_name}?download=true")
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
