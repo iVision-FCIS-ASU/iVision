@@ -38,7 +38,7 @@ class ObjectDetector:
         self.model_type: None | ObjectDetector.ModelType = None
         self.boxes: None | list[tuple[int, int, int, int, int, float]] = None
         self.masks: None | list[npt.NDArray] = None
-        self.centroids: None | list[tuple[int, int]] = None
+        self.centroids: None | list[tuple[tuple[int, int], str]] = None
 
         self.overlay_color = overlay_color
         self.overlay_mask_ratio = overlay_ratio
@@ -53,9 +53,9 @@ class ObjectDetector:
         frame: npt.NDArray, 
         model_yolo_type: ObjectDetector.ModelType,
         imgsz: int = 320
-    ) -> tuple[None | list[tuple[int, int, int, int, int, float]], None | list[npt.NDArray], list[tuple[int, int]]]:
+    ) -> tuple[None | list[tuple[int, int, int, int, int, float]], None | list[npt.NDArray], list[tuple[tuple[int, int], str]]]:
         self.model_type = model_yolo_type
-        output = self.models[self.model_type](frame, verbose=False, imgsz=imgsz)[0]
+        output = self.models[self.model_type].predict(frame, verbose=False, imgsz=imgsz)[0]
 
         if output.boxes is None:
             self.boxes = None
@@ -73,13 +73,13 @@ class ObjectDetector:
             if self.boxes is not None:
                 self.centroids = []
                 for box in self.boxes:
-                    x1, y1, x2, y2, _, _ = box
+                    x1, y1, x2, y2, cls, _ = box
                     centroid = (int((x2 + x1) / 2), int((y2 + y1) / 2))
-                    self.centroids.append(centroid)
+                    self.centroids.append((centroid, self.classes[self.model_type][cls]))
         else:
             mask_models = scale_masks(output.masks.data.unsqueeze(1), output.boxes.orig_shape, padding=True)
             self.masks = [mask_model[0].cpu().numpy() > 0.5 for mask_model in mask_models]
-            self.centroids = [tuple(map(round, ndimage.center_of_mass(mask)[::-1])) for mask in self.masks]
+            self.centroids = [(tuple(map(round, ndimage.center_of_mass(mask)[::-1])), self.classes[self.model_type][box[4]]) for mask, box in zip(self.masks, self.boxes)]
         
         return self.boxes, self.masks, self.centroids
 
@@ -91,7 +91,7 @@ class ObjectDetector:
             return
 
         if self.model_type == self.ModelType.YOLO_DETECT or self.masks is None:
-            for box, centroid in zip(self.boxes, self.centroids):
+            for box, (centroid, _) in zip(self.boxes, self.centroids):
                 x1, y1, x2, y2, cls, conf = box
                 # centroid = (int((x2 + x1) / 2), int((y2 + y1) / 2))
                 
@@ -101,7 +101,7 @@ class ObjectDetector:
                 cv2.putText(output_image, label, (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 
                             self.overlay_font_scale, self.overlay_color, self.overlay_thickness)
         else:
-            for box, mask, centroid in zip(self.boxes, self.masks, self.centroids):
+            for box, mask, (centroid, _) in zip(self.boxes, self.masks, self.centroids):
                 x1, y1, x2, y2, cls, conf = box
                 output_image[mask] = self.overlay_mask_inverse_ratio * output_image[mask] + self.overlay_mask_color 
                 
@@ -115,32 +115,41 @@ class ObjectDetector:
         self,
         output_image: npt.NDArray,
         depth_bw: npt.NDArray,
-        draw_masks: bool = False
-    ):
+        draw_masks: bool = False,
+        depth_warning_threshold: int = 150
+    ) -> list[tuple[tuple[int, int], str]]:
         if self.model_type is None or self.boxes is None:
-            return
+            return list()
+
+        warning_centroids: list[tuple[tuple[int, int], str]] = []
 
         if self.model_type == self.ModelType.YOLO_DETECT or self.masks is None:
-            for box, centroid in zip(self.boxes, self.centroids):
-                x1, y1, x2, y2, cls, conf = box
+            for box, (centroid, cls_str) in zip(self.boxes, self.centroids):
+                x1, y1, x2, y2, _, conf = box
                 # centroid = (int((x2 + x1) / 2), int((y2 + y1) / 2))
                 mean_depth, min_depth, max_depth = get_mean_depth_box(depth_bw, box)
+                if mean_depth >= depth_warning_threshold:
+                    warning_centroids.append((centroid, cls_str))
 
-                label = f"{self.classes[self.model_type][cls]}:({conf:0.2f}) depth:({mean_depth}, {min_depth}, {max_depth})"
+                label = f"{cls_str}:({conf:0.2f}) depth:({mean_depth}, {min_depth}, {max_depth})"
                 cv2.circle(output_image, centroid, radius=self.overlay_centroid_radius, color=self.overlay_color, thickness=-1)
                 cv2.rectangle(output_image, (x1, y1), (x2, y2), self.overlay_color, self.overlay_thickness)
                 cv2.putText(output_image, label, (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 
                             self.overlay_font_scale, self.overlay_color, self.overlay_thickness)
         else:
-            for box, mask, centroid in zip(self.boxes, self.masks, self.centroids):
-                x1, y1, x2, y2, cls, conf = box
+            for box, mask, (centroid, cls_str) in zip(self.boxes, self.masks, self.centroids):
+                x1, y1, x2, y2, _, conf = box
                 mean_depth, min_depth, max_depth = get_mean_depth_mask(depth_bw, mask)
+                if mean_depth >= depth_warning_threshold:
+                    warning_centroids.append((centroid, cls_str))
                 if draw_masks:
                     output_image[mask] = self.overlay_mask_inverse_ratio * output_image[mask] + self.overlay_mask_color 
                 
-                label = f"{self.classes[self.model_type][cls]}:({conf:0.2f}) depth:({mean_depth}, {min_depth}, {max_depth})"
+                label = f"{cls_str}:({conf:0.2f}) depth:({mean_depth}, {min_depth}, {max_depth})"
                 cv2.circle(output_image, centroid, radius=self.overlay_centroid_radius, color=self.overlay_color, thickness=-1)
                 cv2.rectangle(output_image, (x1, y1), (x2, y2), self.overlay_color, self.overlay_thickness)
                 cv2.putText(output_image, label, (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 
                             self.overlay_font_scale, self.overlay_color, self.overlay_thickness)
+        
+        return warning_centroids
         

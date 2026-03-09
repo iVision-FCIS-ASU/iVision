@@ -17,7 +17,7 @@ class DepthEstimator:
 
     def __init__(self):
         # MIDAS_ORIG is kept temporarily until perfectly replicated in TFLITE
-        self.models = {
+        self.models: dict[DepthEstimator.ModelType, MiDaS | MiDaSv21 | DepthAnythingV2] = {
             self.ModelType.MIDAS_ORIG: MiDaS("midas_v21_small_256"),
             self.ModelType.MIDAS_V21: MiDaSv21(),
             self.ModelType.DEPTH_ANYTHING_V2: DepthAnythingV2()

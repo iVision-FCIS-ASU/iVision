@@ -180,7 +180,7 @@ def run_grid_test():
         yolo_image = frame.copy()
         output_image = cv2.cvtColor(depth_bw, cv2.COLOR_GRAY2BGR)
         
-        boxes, masks, centroids = yolo_model.get_objects(frame, ObjectDetector.ModelType.YOLO_SEGMENT)
+        boxes, masks, yolo_centroids = yolo_model.get_objects(frame, ObjectDetector.ModelType.YOLO_SEGMENT)
         yolo_model.draw_objects(yolo_image)
         yolo_model.draw_objects_with_depth(output_image, depth_bw, draw_masks=True)
 
@@ -193,8 +193,9 @@ def run_grid_test():
         output_image = np.hstack((yolo_image, output_image))
         cv2.imshow(f"Grid Test {output_image.shape}", output_image)
 
-        # obstacle_centroids = grid.get_obstacle_centroids()
-        # print(f"Obstacle centroids (x, y): {obstacle_centroids}")
+        depth_centroids = grid.get_obstacle_centroids()
+        print(f"\nYOLO centroids (x, y): {yolo_centroids}")
+        print(f"Obstacle centroids (x, y): {depth_centroids}\n")
 
         pressed_key = cv2.waitKey(1)
         if pressed_key == ord("q") or pressed_key == ord("Q"):
