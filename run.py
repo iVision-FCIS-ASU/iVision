@@ -6,6 +6,7 @@ import threading
 import line_profiler
 from typing import Literal
 from numpy import typing as npt
+from datetime import datetime
 from models_download import download_models
 from modules.object_detection import ObjectDetector
 from modules.depth_estimation import DepthEstimator
@@ -38,7 +39,7 @@ class iVision:
         self.complexity_lock = threading.Lock()
         self.complexity = Complexity.SIMPLE
         self.scene_type = SceneType.INDOOR
-        self.weather = Weather.UNKNOWN
+        self.weather = Weather.BRIGHT
 
         self.frame_lock = threading.Lock()
         self.frame = np.zeros(1)
@@ -125,14 +126,14 @@ class iVision:
     def __complexity_estimation_thread(self):
         print("-----Starting Complexity Estimation Thread-----")
         SLEEP_COUNT = 10
-        SLEEP_SECS = 10 / SLEEP_COUNT
+        SLEEP_SECS = 5 / SLEEP_COUNT
         MAX_PREDICTIONS = 5
         predictions_counter = 0
         
         scene_type_map = {"indoor": SceneType.INDOOR, "outdoor": SceneType.OUTDOOR}
         scene_types_dict: dict[SceneType, int] = {}
-        weathers_dict: dict[str, int] = {}
-        predictions_dict: dict[Complexity, int] = {}
+        weathers_dict: dict[Weather, int] = {}
+        complexities_dict: dict[Complexity, int] = {}
         
         prev_frame = np.zeros(1)
 
@@ -150,27 +151,36 @@ class iVision:
             scene_type = scene_type_map[self.model_scene_classifier.get_scene_type_binary(frame)]
             complexity, weather, confidence = self.model_complexity_estimator.predict(scene_type, frame)
 
-            if scene_type not in scene_types_dict:
-                scene_types_dict[scene_type] = 0
-            scene_types_dict[scene_type] += 1
+            # if complexity not in predictions_dict:
+            #     predictions_dict[complexity] = 0
+            # predictions_dict[complexity] += 1
+
+            # if scene_type not in scene_types_dict:
+            #     scene_types_dict[scene_type] = 0
+            # scene_types_dict[scene_type] += 1
 
             if weather not in weathers_dict:
                 weathers_dict[weather] = 0
             weathers_dict[weather] += 1
 
-            if complexity not in predictions_dict:
-                predictions_dict[complexity] = 0
-            predictions_dict[complexity] += 1
-
             predictions_counter += 1
             if predictions_counter >= MAX_PREDICTIONS:
                 predictions_counter = 0
-                max_scene_type: str = max(scene_types_dict, key=scene_types_dict.get)
+                # max_complexity: Complexity = max(predictions_dict, key=predictions_dict.get)
+                # max_scene_type: SceneType = max(scene_types_dict, key=scene_types_dict.get)
                 max_weather: Weather = max(weathers_dict, key=weathers_dict.get)
-                max_complexity: Complexity = max(predictions_dict, key=predictions_dict.get)
-                predictions_dict.clear()
+                max_scene_type = self.model_complexity_estimator.weather_to_scene[max_weather]
+                max_complexity = self.model_complexity_estimator.weather_to_complexity[max_weather]
+                # complexities_dict.clear()
+                # scene_types_dict.clear()
+                weathers_dict.clear()
 
+
+                cur_datetime = datetime.now().strftime("%Y-%m-%d--%H-%M-%S")
                 # print(f"\nScene: {max_scene_type}\nWeather: {max_weather.name}\nComplexity: {max_complexity.name}\n")
+                print((f"\n{cur_datetime} | Complexity: {max_complexity.name}\n"
+                       f"{cur_datetime} | Scene: {max_scene_type.name}\n"
+                       f"{cur_datetime} | Weather: {max_weather.name}\n"))
                 
                 with self.complexity_lock:
                     self.complexity = max_complexity
