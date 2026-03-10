@@ -24,7 +24,7 @@ def run(
 
     model_path = model_paths[model_type]
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model, transform, net_w, net_h = load_model(device, model_path, model_type, optimize)
+    model, transform, net_w, net_h = load_model(device, model_path, model_type, optimize, False)
 
     with torch.inference_mode():
         fps = 1

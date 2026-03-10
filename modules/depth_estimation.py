@@ -33,11 +33,11 @@ class DepthEstimator:
         return self.models[model_type].get_depth_image(frame)
 
 class MiDaS:
-    def __init__(self, model_type: Literal["midas_v21_small_256", "dpt_swin2_tiny_256"]):
+    def __init__(self, model_type: Literal["midas_v21_small_256", "dpt_swin2_tiny_256"], square=False):
         self.model_type = model_type
         model_path = model_paths[self.model_type]
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.model, self.transform, self.net_w, self.net_h = load_model(self.device, model_path, model_type, False)
+        self.model, self.transform, self.net_w, self.net_h = load_model(self.device, model_path, model_type, False, square)
     
     def get_depth_image(self, frame):
         with torch.no_grad():
@@ -68,11 +68,6 @@ class MiDaSv21:
         h, w = frame.shape[:2]
         scale = self.target_size / max(h, w)
         new_h, new_w = int(h * scale), int(w * scale)
-        # new_h, new_w = h * scale, w * scale
-        # multiple = 32
-        # new_h = int(round(new_h / multiple) * multiple)
-        # new_w = int(round(new_w / multiple) * multiple)
-        # image = cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_AREA)
         image = cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_CUBIC)
 
         pad_h = self.target_size - new_h
@@ -82,16 +77,11 @@ class MiDaSv21:
         left = pad_w // 2
         right = pad_w - left
         image = cv2.copyMakeBorder(image, top, bottom, left, right, cv2.BORDER_REFLECT_101)
-        # image = cv2.copyMakeBorder(image, top, bottom, left, right, cv2.BORDER_CONSTANT, value=0)
-
-        mean = np.array([0.485, 0.456, 0.406], dtype=np.float32)
-        std = np.array([0.229, 0.224, 0.225], dtype=np.float32)
-        image = (image - mean) / std
 
         image = np.expand_dims(image, axis=0)
 
         return image, frame.shape[:2], (top, bottom, left, right)
-    
+
     def __postprocess(
         self,
         depth_raw: npt.NDArray, 
@@ -99,7 +89,7 @@ class MiDaSv21:
         pad_info: tuple[int, int, int, int]
     ) -> npt.NDArray:
         depth_img = np.squeeze(depth_raw)
-        
+
         top, bottom, left, right = pad_info
         depth_img = depth_img[top:self.target_size - bottom, left:self.target_size - right]
 
@@ -138,7 +128,7 @@ class DepthAnythingV2:
         h, w = frame.shape[:2]
         scale = self.target_size / max(h, w)
         new_h, new_w = int(h * scale), int(w * scale)
-        image = cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_AREA)
+        image = cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_CUBIC)
 
         pad_h = self.target_size - new_h
         pad_w = self.target_size - new_w
@@ -162,7 +152,7 @@ class DepthAnythingV2:
 
         top, bottom, left, right = pad_info
         depth_img = depth_img[top:self.target_size - bottom, left:self.target_size - right]
-        
+
         depth_img = cv2.resize(depth_img, orig_shape[::-1], interpolation=cv2.INTER_CUBIC)
         depth_img = cv2.normalize(depth_img, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
 

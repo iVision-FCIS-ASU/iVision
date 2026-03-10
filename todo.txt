@@ -1,14 +1,11 @@
-1.  test slightly advanced grid technique for warning system (warnings will still be hardcoded to specific mXn grid)
-2.  brainstorm variations and alternatives to grid technique for warning system (also think about obstacle persistence)
-3.  figure out midas_v21_small preprocessing and postprocessing (to apply PERFECTLY to new tflite version, CHECK OUT new idea from MobileViT conversion success)
-4.  make sure DepthAnythingV2's pre/post-processing was correctly implemented (after gaining new knowledge from MobileViT conversion success)
-5.  implement queues/dicts (sliding window) alternative for complexity estimation predictions
-6.  merge grid obstacle detector to current pipeline
-7.  merge grid warning system (if it turns out well) to current pipeline
-8.  download and test FastVLM locally
-9.  test metric depth models (metric DepthAnythingV2, metric VideoDepthAnything)
-10. in object_detection.py, switch from using "None" everywhere to empty lists
-11. fine-tune sliding window complexity estimation parameters
-12. fine-tune indoor complexity estimation (luminance map) parameters further
-13. fine-tune the grid parameters further, and check if there are more (or better) parameters to add
-14. add optional debug statements (for later, very low priority)
+1.  brainstorm variations and alternatives to grid technique for warning system (also think about obstacle persistence)
+2.  implement queues/dicts (sliding window) alternative for complexity estimation predictions
+3.  merge grid obstacle detector to current pipeline
+4.  merge grid warning system (if it turns out well) to current pipeline
+5.  download and test FastVLM locally
+6.  test metric depth models (metric DepthAnythingV2, metric VideoDepthAnything)
+7.  in object_detection.py, switch from using "None" everywhere to empty lists
+8.  fine-tune sliding window complexity estimation parameters
+9.  fine-tune indoor complexity estimation (luminance map) parameters further
+10. fine-tune the grid parameters further, and check if there are more (or better) parameters to add
+11. add optional debug statements (for later, very low priority)

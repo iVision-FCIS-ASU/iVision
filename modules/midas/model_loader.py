@@ -13,7 +13,7 @@ model_paths = {
     "midas_v21_small_256": "weights/midas_v21_small_256.pt",
 }
 
-def load_model(device, model_path: str, model_type: str, optimize=True):
+def load_model(device, model_path: str, model_type: str, optimize=True, square=False):
     """Load the specified network.
 
     Args:
@@ -26,6 +26,8 @@ def load_model(device, model_path: str, model_type: str, optimize=True):
         The loaded network, the transform which prepares images as input to the network and the dimensions of the
         network input
     """
+
+    keep_aspect_ratio = not square
 
     if model_type == "dpt_swin2_tiny_256":
         model = DPTDepthModel(
@@ -42,7 +44,6 @@ def load_model(device, model_path: str, model_type: str, optimize=True):
         model = MidasNet_small(model_path, features=64, backbone="efficientnet_lite3", exportable=True,
                                non_negative=True, blocks={'expand': True})
         net_w, net_h = 256, 256
-        keep_aspect_ratio = True
         resize_mode = "upper_bound"
         normalization = NormalizeImage(
             mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]

@@ -15,6 +15,7 @@ def run_depth_estimation():
     model_type = DepthEstimator.ModelType.DEPTH_ANYTHING_V2
 
     cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+    model_switch_keys = [ord(str(index)) for index in depth_estimator.model_types]
 
     while True:
         ret, frame = cap.read()
@@ -29,7 +30,7 @@ def run_depth_estimation():
         key_pressed = cv2.waitKey(1)
         if key_pressed == ord("q") or key_pressed == ord("Q"):
             break
-        elif key_pressed != -1 and int(chr(key_pressed)) in depth_estimator.model_types:
+        elif key_pressed in model_switch_keys:
             model_type = DepthEstimator.ModelType(int(chr(key_pressed)))
 
     cap.release()

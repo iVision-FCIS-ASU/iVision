@@ -45,3 +45,20 @@
 #     )
 # print("Exported to weights/depth_anything_v2_vits.onnx")
 ####################################################################
+
+####################################################################
+#
+# MiDaSv21 TO ONNX
+#
+
+# torch.onnx.export(
+#     model,
+#     sample,
+#     "temp.onnx",
+#     input_names=['input'],
+#     output_names=['output'],
+#     dynamo=True,
+#     export_params=True,
+#     keep_initializers_as_inputs=False
+# )
+####################################################################

@@ -172,7 +172,8 @@ class GridWarningSystem:
         self, 
         w: int, 
         h: int, 
-        grid_size: tuple[int, int] = (3, 3),
+        grid_size: tuple[int, int] = (11, 3),
+        grid_ratio: tuple[float, float] = (0.6, 0.6),
         color: tuple[int, int, int] = (0, 0, 255),
         grid_thickness: int = 1,
         overlay_color_ratio: float = 0.5,
@@ -184,6 +185,7 @@ class GridWarningSystem:
         self.w = w
         self.h = h
         self.grid_size = grid_size
+        self.grid_ratio = grid_ratio
 
         self.color = color
         self.grid_thickness = grid_thickness
@@ -202,32 +204,27 @@ class GridWarningSystem:
     
     def __create_grid_points(self):
         grid_size_x, grid_size_y = self.grid_size
+        grid_ratio_x, grid_ratio_y = self.grid_ratio
         grid_x_loop = grid_size_x // 2
         grid_y_loop = grid_size_y // 2
 
         w_left = self.w // grid_size_x
         w_right = self.w - w_left
-        h_up = self.h // grid_size_y
+        h_up = int(grid_ratio_y * (self.h // grid_size_y))
         h_down = self.h - h_up
 
         x_points = [0, self.w]
-        y_points = [0, self.h]
+        y_points = [0, h_up, h_down, self.h]
 
-        for i in range(grid_x_loop):
+        grid_x_start = int(np.ceil(grid_x_loop * grid_ratio_x)) - 1
+
+        for i in range(grid_x_start, grid_x_loop):
             x = w_left + i * w_left
             x_points.append(x)
 
-        for i in range(grid_x_loop):
+        for i in range(grid_x_start, grid_x_loop):
             x = w_right - i * w_left
             x_points.append(x)
-
-        for i in range(grid_y_loop):
-            y = h_up + i * h_up
-            y_points.append(y)
-
-        for i in range(grid_y_loop):
-            y = h_down - i * h_up
-            y_points.append(y)
 
         self.x_points: npt.NDArray[np.integer] = np.sort(x_points)
         self.y_points: npt.NDArray[np.integer] = np.sort(y_points)
@@ -242,13 +239,36 @@ class GridWarningSystem:
             (0, 0): "left, head level",
             (1, 0): "left, chest level",
             (2, 0): "left, leg level",
-            (0, 1): "front, head level",
-            (1, 1): "front, chest level",
-            (2, 1): "front, leg level",
-            (0, 2): "right, head level",
-            (1, 2): "right, chest level",
-            (2, 2): "right, leg level",
+            (0, 1): "front left, head level",
+            (1, 1): "front left, chest level",
+            (2, 1): "front left, leg level",
+            (0, 2): "front slightly left, head level",
+            (1, 2): "front slightly left, chest level",
+            (2, 2): "front slightly left, leg level",
+            (0, 3): "front, head level",
+            (1, 3): "front, chest level",
+            (2, 3): "front, leg level",
+            (0, 4): "front slightly right, head level",
+            (1, 4): "front slightly right, chest level",
+            (2, 4): "front slightly right, leg level",
+            (0, 5): "front right, head level",
+            (1, 5): "front right, chest level",
+            (2, 5): "front right, leg level",
+            (0, 6): "right, head level",
+            (1, 6): "right, chest level",
+            (2, 6): "right, leg level",
         }
+        # self.grid_warning_pos: dict[tuple[int, int], str] = {
+        #     (0, 0): "left, head level",
+        #     (1, 0): "left, chest level",
+        #     (2, 0): "left, leg level",
+        #     (0, 1): "front, head level",
+        #     (1, 1): "front, chest level",
+        #     (2, 1): "front, leg level",
+        #     (0, 2): "right, head level",
+        #     (1, 2): "right, chest level",
+        #     (2, 2): "right, leg level",
+        # }
 
     def __draw_overlays(self, frame: npt.NDArray, output_img: npt.NDArray, centroids: list[tuple[tuple[int, int], str]]):
         self.grid_warning_dict = dict()
@@ -289,7 +309,7 @@ class GridWarningSystem:
             x = int(centroid[0] - text_size[0]/2)
             y = int(centroid[1] - text_size[1]/2) - 5
             cv2.putText(output_img, cls, (x, y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, self.color, 2)
-
+    
     def __create_warnings(self):
         self.warnings: list[str] = []
         for pos, centroids in self.grid_warning_dict.items():
