@@ -13,6 +13,7 @@ from modules.depth_estimation import DepthEstimator
 from modules.complexity_estimation import SceneType, Weather, Complexity, ComplexityEstimator
 from modules.scene_classification import SceneClassifier
 from modules.scene_narration import SceneNarrator
+from modules.utils.sliding_window import SlidingWindow
 
 class iVision:
     def __init__(
@@ -96,8 +97,10 @@ class iVision:
             return output_image
 
         yolo_image = frame.copy()
-        cv2.putText(frame, f"{complexity.name}, {scene_type.name}, {weather.name}", 
-                    (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+        label = f"{complexity.name}, {scene_type.name}, {weather.name}"
+        cv2.putText(frame, label, (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 5)
+        cv2.putText(frame, label, (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+        
         self.model_object_detector.draw_objects(yolo_image)
         output_image = np.vstack((np.hstack((frame, yolo_image)), 
                                   np.hstack((cv2.cvtColor(depth_bw, cv2.COLOR_GRAY2BGR), output_image))))
@@ -125,15 +128,12 @@ class iVision:
 
     def __complexity_estimation_thread(self):
         print("-----Starting Complexity Estimation Thread-----")
-        SLEEP_COUNT = 10
-        SLEEP_SECS = 5 / SLEEP_COUNT
-        MAX_PREDICTIONS = 5
-        predictions_counter = 0
         
+        SLEEP_SECS = 0.25
+        WINDOW_SIZE = 10
+        prev_weather = Weather.BRIGHT
+        weather_window = SlidingWindow(WINDOW_SIZE, prev_weather)
         scene_type_map = {"indoor": SceneType.INDOOR, "outdoor": SceneType.OUTDOOR}
-        scene_types_dict: dict[SceneType, int] = {}
-        weathers_dict: dict[Weather, int] = {}
-        complexities_dict: dict[Complexity, int] = {}
         
         prev_frame = np.zeros(1)
 
@@ -141,9 +141,7 @@ class iVision:
             with self.frame_lock:
                 frame = self.frame.copy()
             
-            # if frame is None or np.array_equal(frame, prev_frame):
             if np.array_equal(frame, prev_frame):
-                # time.sleep(0.001)
                 time.sleep(0)
                 continue
             prev_frame = frame
@@ -151,34 +149,17 @@ class iVision:
             scene_type = scene_type_map[self.model_scene_classifier.get_scene_type_binary(frame)]
             complexity, weather, confidence = self.model_complexity_estimator.predict(scene_type, frame)
 
-            # if complexity not in predictions_dict:
-            #     predictions_dict[complexity] = 0
-            # predictions_dict[complexity] += 1
+            weather_window.append(weather)
+            max_weather = weather_window.get_max_val()
 
-            # if scene_type not in scene_types_dict:
-            #     scene_types_dict[scene_type] = 0
-            # scene_types_dict[scene_type] += 1
-
-            if weather not in weathers_dict:
-                weathers_dict[weather] = 0
-            weathers_dict[weather] += 1
-
-            predictions_counter += 1
-            if predictions_counter >= MAX_PREDICTIONS:
-                predictions_counter = 0
-                # max_complexity: Complexity = max(predictions_dict, key=predictions_dict.get)
-                # max_scene_type: SceneType = max(scene_types_dict, key=scene_types_dict.get)
-                max_weather: Weather = max(weathers_dict, key=weathers_dict.get)
+            if max_weather != prev_weather:
+                prev_weather = max_weather
                 max_scene_type = self.model_complexity_estimator.weather_to_scene[max_weather]
                 max_complexity = self.model_complexity_estimator.weather_to_complexity[max_weather]
-                # complexities_dict.clear()
-                # scene_types_dict.clear()
-                weathers_dict.clear()
-
-
+                
                 cur_datetime = datetime.now().strftime("%Y-%m-%d--%H-%M-%S")
-                # print(f"\nScene: {max_scene_type}\nWeather: {max_weather.name}\nComplexity: {max_complexity.name}\n")
-                print((f"\n{cur_datetime} | Complexity: {max_complexity.name}\n"
+                print((f"\n"
+                       f"{cur_datetime} | Complexity: {max_complexity.name}\n"
                        f"{cur_datetime} | Scene: {max_scene_type.name}\n"
                        f"{cur_datetime} | Weather: {max_weather.name}\n"))
                 
@@ -186,12 +167,8 @@ class iVision:
                     self.complexity = max_complexity
                     self.scene_type = max_scene_type
                     self.weather = max_weather
-                
-                # time.sleep(SLEEP_SECS)
-                for _ in range(SLEEP_COUNT):
-                    if not self.IS_RUNNING:
-                        break
-                    time.sleep(SLEEP_SECS)
+
+            time.sleep(SLEEP_SECS)
         
         print("-----Stopped Complexity Estimation Thread-----")
 
@@ -244,7 +221,7 @@ class iVision:
 if __name__ == "__main__":
     iVision(
         model_yolo_type=(ObjectDetector.ModelType.YOLO_SEGMENT, ObjectDetector.ModelType.YOLO_SEGMENT),
-        model_depth_type=(DepthEstimator.ModelType.DEPTH_ANYTHING_V2, DepthEstimator.ModelType.DEPTH_ANYTHING_V2),
+        model_depth_type=(DepthEstimator.ModelType.MIDAS_V21, DepthEstimator.ModelType.DEPTH_ANYTHING_V2),
         side_by_side=True,
         debug=False,
         cap_id=0
