@@ -381,9 +381,8 @@ def run_grid_test():
                                                          depth_warning_threshold=depth_warning_threshold)
 
         depth_bw_without_objects = depth_bw.copy()
-        if masks is not None:
-            for mask in masks:
-                depth_bw_without_objects[mask] = 0
+        for mask in masks:
+            depth_bw_without_objects[mask] = 0
         grid_obstacle_detector.draw_grid(output_image, depth_bw_without_objects, 
                                          depth_warning_threshold=depth_warning_threshold)
         depth_centroids = grid_obstacle_detector.get_obstacle_centroids()

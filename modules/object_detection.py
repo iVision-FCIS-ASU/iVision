@@ -36,9 +36,9 @@ class ObjectDetector:
         self.model_types = { model_type.value for model_type in ObjectDetector.ModelType }
 
         self.model_type: None | ObjectDetector.ModelType = None
-        self.boxes: None | list[tuple[int, int, int, int, int, float]] = None
-        self.masks: None | list[npt.NDArray] = None
-        self.centroids: None | list[tuple[tuple[int, int], str]] = None
+        self.boxes: list[tuple[int, int, int, int, int, float]] = []
+        self.masks: list[npt.NDArray] = []
+        self.centroids: list[tuple[tuple[int, int], str]] = []
 
         self.overlay_color = overlay_color
         self.overlay_mask_ratio = overlay_ratio
@@ -53,33 +53,32 @@ class ObjectDetector:
         frame: npt.NDArray, 
         model_yolo_type: ObjectDetector.ModelType,
         imgsz: int = 320
-    ) -> tuple[None | list[tuple[int, int, int, int, int, float]], None | list[npt.NDArray], list[tuple[tuple[int, int], str]]]:
+    ) -> tuple[list[tuple[int, int, int, int, int, float]], list[npt.NDArray], list[tuple[tuple[int, int], str]]]:
         self.model_type = model_yolo_type
         output = self.models[self.model_type].predict(frame, verbose=False, imgsz=imgsz)[0]
 
-        if output.boxes is None:
-            self.boxes = None
-        else:
-            self.boxes = []
+        self.boxes = []
+        if output.boxes is not None:
             for box in output.boxes:
                 x1, y1, x2, y2 = box.xyxy[0].round().int().tolist()
                 cls = int(box.cls[0])
                 conf = float(box.conf[0])
                 self.boxes.append((x1, y1, x2, y2, cls, conf))
         
+        self.masks = []
+        self.centroids = []
         if model_yolo_type != self.ModelType.YOLO_SEGMENT or output.masks is None:
-            self.masks = None
-            self.centroids = None
-            if self.boxes is not None:
-                self.centroids = []
-                for box in self.boxes:
-                    x1, y1, x2, y2, cls, _ = box
-                    centroid = (int((x2 + x1) / 2), int((y2 + y1) / 2))
-                    self.centroids.append((centroid, self.classes[self.model_type][cls]))
+            for box in self.boxes:
+                x1, y1, x2, y2, cls, _ = box
+                centroid = (int((x2 + x1) / 2), int((y2 + y1) / 2))
+                self.centroids.append((centroid, self.classes[self.model_type][cls]))
         else:
             mask_models = scale_masks(output.masks.data.unsqueeze(1), output.boxes.orig_shape, padding=True)
             self.masks = [mask_model[0].cpu().numpy() > 0.5 for mask_model in mask_models]
-            self.centroids = [(tuple(map(round, ndimage.center_of_mass(mask)[::-1])), self.classes[self.model_type][box[4]]) for mask, box in zip(self.masks, self.boxes)]
+            self.centroids = [
+                (tuple(map(round, ndimage.center_of_mass(mask)[::-1])), self.classes[self.model_type][box[4]]) 
+                for mask, box in zip(self.masks, self.boxes)
+            ]
         
         return self.boxes, self.masks, self.centroids
 
@@ -87,13 +86,12 @@ class ObjectDetector:
         self,
         output_image: npt.NDArray,
     ):
-        if self.model_type is None or self.boxes is None:
+        if self.model_type is None or len(self.boxes) == 0:
             return
 
-        if self.model_type == self.ModelType.YOLO_DETECT or self.masks is None:
+        if self.model_type == self.ModelType.YOLO_DETECT or len(self.masks) == 0:
             for box, (centroid, _) in zip(self.boxes, self.centroids):
                 x1, y1, x2, y2, cls, conf = box
-                # centroid = (int((x2 + x1) / 2), int((y2 + y1) / 2))
                 
                 label = f"{self.classes[self.model_type][cls]} {conf:0.2f}"
                 cv2.circle(output_image, centroid, radius=self.overlay_centroid_radius, color=self.overlay_color, thickness=-1)
@@ -118,15 +116,14 @@ class ObjectDetector:
         draw_masks: bool = False,
         depth_warning_threshold: int = 150
     ) -> list[tuple[tuple[int, int], str]]:
-        if self.model_type is None or self.boxes is None:
-            return list()
+        if self.model_type is None or len(self.boxes) == 0:
+            return []
 
         warning_centroids: list[tuple[tuple[int, int], str]] = []
 
-        if self.model_type == self.ModelType.YOLO_DETECT or self.masks is None:
+        if self.model_type == self.ModelType.YOLO_DETECT or len(self.masks) == 0:
             for box, (centroid, cls_str) in zip(self.boxes, self.centroids):
                 x1, y1, x2, y2, _, conf = box
-                # centroid = (int((x2 + x1) / 2), int((y2 + y1) / 2))
                 mean_depth, min_depth, max_depth = get_mean_depth_box(depth_bw, box)
                 if mean_depth >= depth_warning_threshold:
                     warning_centroids.append((centroid, cls_str))

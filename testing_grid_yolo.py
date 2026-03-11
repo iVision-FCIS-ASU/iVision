@@ -185,9 +185,8 @@ def run_grid_test():
         yolo_model.draw_objects_with_depth(output_image, depth_bw, draw_masks=True)
 
         depth_bw_without_objects = depth_bw.copy()
-        if masks is not None:
-            for mask in masks:
-                depth_bw_without_objects[mask] = 0
+        for mask in masks:
+            depth_bw_without_objects[mask] = 0
         grid.draw_grid(output_image, depth_bw_without_objects, depth_rgb)
 
         output_image = np.hstack((yolo_image, output_image))
