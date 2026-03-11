@@ -1,5 +1,8 @@
+from __future__ import annotations
 import cv2
 import numpy as np
+import line_profiler
+from enum import Enum, auto
 from itertools import pairwise
 from numpy import typing as npt
 from scipy.cluster.hierarchy import DisjointSet
@@ -7,6 +10,7 @@ from shapely.geometry import box, Polygon
 from shapely.ops import unary_union
 from modules.object_detection import ObjectDetector
 from modules.depth_estimation import DepthEstimator
+from modules.utils.sliding_window import SlidingWindow
 
 class GridObstacleDetector:
     def __init__(
@@ -168,12 +172,17 @@ class GridObstacleDetector:
         self.__draw_connected_grids(output_img)
 
 class GridWarningSystem:
+    class Status(Enum):
+        CLEAR = auto()
+        OBSTRUCTED = auto()
+
     def __init__(
         self, 
         w: int, 
         h: int, 
         grid_size: tuple[int, int] = (11, 3),
         grid_ratio: tuple[float, float] = (0.6, 0.6),
+        grid_window_size: int = 10,
         color: tuple[int, int, int] = (0, 0, 255),
         grid_thickness: int = 1,
         overlay_color_ratio: float = 0.5,
@@ -186,6 +195,7 @@ class GridWarningSystem:
         self.h = h
         self.grid_size = grid_size
         self.grid_ratio = grid_ratio
+        self.grid_window_size = grid_window_size
 
         self.color = color
         self.grid_thickness = grid_thickness
@@ -200,9 +210,9 @@ class GridWarningSystem:
         self.obstacle_centroid_radius = obstacle_centroid_radius
         self.obstacle_thickness = obstacle_thickness
 
-        self.__create_grid_points()
+        self.__create_grids()
     
-    def __create_grid_points(self):
+    def __create_grids(self):
         grid_size_x, grid_size_y = self.grid_size
         grid_ratio_x, grid_ratio_y = self.grid_ratio
         grid_x_loop = grid_size_x // 2
@@ -232,10 +242,15 @@ class GridWarningSystem:
         self.x_points_pos: dict[int, int] = { val: idx for idx, val in enumerate(self.x_points) }
         self.y_points_pos: dict[int, int] = { val: idx for idx, val in enumerate(self.y_points) }
         
-        self.grids = { (j, i): (xi, yi, xj, yj) for j, (yi, yj) in enumerate(pairwise(self.y_points)) for i, (xi, xj) in enumerate(pairwise(self.x_points)) }
+        self.grids: dict[tuple[int, int], tuple[int, int, int, int]] = { 
+            (j, i): (xi, yi, xj, yj) 
+            for j, (yi, yj) in enumerate(pairwise(self.y_points)) 
+            for i, (xi, xj) in enumerate(pairwise(self.x_points))
+        }
         self.grids_inverse = { grid: pos for pos, grid in self.grids.items() }
-        self.grid_warning_dict: dict[tuple[int, int], list[tuple[tuple[int, int], str]]] = dict()
-        self.grid_warning_pos: dict[tuple[int, int], str] = {
+        self.grid_windows = { pos: SlidingWindow(self.grid_window_size, self.Status.CLEAR) for pos in self.grids }
+        self.grid_warning_data: dict[tuple[int, int], list[tuple[tuple[int, int], str]]] = {}
+        self.grid_warning_message: dict[tuple[int, int], str] = {
             (0, 0): "left, head level",
             (1, 0): "left, chest level",
             (2, 0): "left, leg level",
@@ -258,20 +273,9 @@ class GridWarningSystem:
             (1, 6): "right, chest level",
             (2, 6): "right, leg level",
         }
-        # self.grid_warning_pos: dict[tuple[int, int], str] = {
-        #     (0, 0): "left, head level",
-        #     (1, 0): "left, chest level",
-        #     (2, 0): "left, leg level",
-        #     (0, 1): "front, head level",
-        #     (1, 1): "front, chest level",
-        #     (2, 1): "front, leg level",
-        #     (0, 2): "right, head level",
-        #     (1, 2): "right, chest level",
-        #     (2, 2): "right, leg level",
-        # }
 
-    def __draw_overlays(self, frame: npt.NDArray, output_img: npt.NDArray, centroids: list[tuple[tuple[int, int], str]]):
-        self.grid_warning_dict = dict()
+    def __collect_obstacles_data(self, centroids: list[tuple[tuple[int, int], str]]):
+        self.grid_warning_data = {}
 
         for centroid, cls in centroids:
             x, y = centroid
@@ -280,17 +284,17 @@ class GridWarningSystem:
                 xi, yi, xj, yj = grid
                 
                 if (xi <= x < xj) and (yi <= y < yj):
-                    if pos not in self.grid_warning_dict:
-                        self.grid_warning_dict[pos] = list()
+                    if pos not in self.grid_warning_data:
+                        self.grid_warning_data[pos] = []
+                    self.grid_warning_data[pos].append((centroid, cls))
 
-                    self.grid_warning_dict[pos].append((centroid, cls))
-        
+    def __draw_overlays(self, output_img: npt.NDArray):
         max_count = 0
-        for grid_warning_list in self.grid_warning_dict.values():
+        for grid_warning_list in self.grid_warning_data.values():
             max_count = max(max_count, len(grid_warning_list))
         max_count /= self.overlay_color_ratio
 
-        for pos, centroids in self.grid_warning_dict.items():
+        for pos, centroids in self.grid_warning_data.items():
             xi, yi, xj, yj = self.grids[pos]
             overlay_color = (len(centroids) / max_count) * self.overlay_color
             output_img[yi:yj, xi:xj, :] = self.inverse_overlay_color_ratio * output_img[yi:yj, xi:xj, :] + overlay_color
@@ -310,11 +314,21 @@ class GridWarningSystem:
             y = int(centroid[1] - text_size[1]/2) - 5
             cv2.putText(output_img, cls, (x, y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, self.color, 2)
     
+    def __update_windows(self):
+        for pos in self.grids:
+            if pos in self.grid_warning_data:
+                self.grid_windows[pos].append(self.Status.OBSTRUCTED)
+            else:
+                self.grid_windows[pos].append(self.Status.CLEAR)
+
     def __create_warnings(self):
         self.warnings: list[str] = []
-        for pos, centroids in self.grid_warning_dict.items():
+        for pos, centroids in self.grid_warning_data.items():
+            if self.grid_windows[pos].get_max_val() == self.Status.CLEAR:
+                continue
+
             for _, cls in centroids:
-                self.warnings.append(f"{cls}, {self.grid_warning_pos[pos]}")
+                self.warnings.append(f"{cls}, {self.grid_warning_message[pos]}")
 
     def get_warnings(self) -> list[str]:
         return self.warnings
@@ -328,12 +342,14 @@ class GridWarningSystem:
     ) -> None:
         centroids = yolo_centroids + [((centroid), "unknown") for centroid in depth_centroids]
         
-        self.__draw_overlays(frame, output_img, centroids)
+        self.__collect_obstacles_data(centroids)
+        self.__draw_overlays(output_img)
         self.__draw_gridlines(output_img)
         self.__draw_centroids(output_img, centroids)
+        self.__update_windows()
         self.__create_warnings()
         
-
+@line_profiler.profile
 def run_grid_test():
     yolo_model = ObjectDetector()
     depth_model = DepthEstimator()
@@ -382,7 +398,7 @@ def run_grid_test():
 
         print(f"\nYOLO centroids (x, y): {yolo_centroids}")
         print(f"Obstacle centroids (x, y): {depth_centroids}")
-        print(f"Grid Warning Dict: {grid_warning_system.grid_warning_dict}")
+        print(f"Grid Warning Data: {grid_warning_system.grid_warning_data}")
         print(f"Grid Warnings: {warnings}\n")
 
         pressed_key = cv2.waitKey(1)
