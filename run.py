@@ -14,12 +14,14 @@ from modules.complexity_estimation import SceneType, Weather, Complexity, Comple
 from modules.scene_classification import SceneClassifier
 from modules.scene_narration import SceneNarrator
 from modules.utils.sliding_window import SlidingWindow
+from modules.grid_obstacle_detection import GridObstacleDetector
 
 class iVision:
     def __init__(
         self, 
         model_yolo_type: tuple[ObjectDetector.ModelType, ObjectDetector.ModelType],
         model_depth_type: tuple[DepthEstimator.ModelType, DepthEstimator.ModelType],
+        depth_warning_threshold: int = 180,
         side_by_side: bool = False,
         debug: bool = False,
         cap_id: int = 0
@@ -30,9 +32,19 @@ class iVision:
 
         self.model_yolo_type_simple, self.model_yolo_type_complex = model_yolo_type
         self.model_depth_type_simple, self.model_depth_type_complex = model_depth_type
+        self.depth_warning_threshold = depth_warning_threshold
         self.side_by_side = side_by_side
         self.debug = debug
         self.cap_id = cap_id
+
+        cap = cv2.VideoCapture(self.cap_id, cv2.CAP_DSHOW)
+        if not cap.isOpened():
+            print("ERROR: Camera failed to initialize!")
+            return
+        
+        self.width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        self.height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        cap.release()
         
         download_models()
         self.__get_models()
@@ -68,6 +80,9 @@ class iVision:
             Complexity.SIMPLE: self.model_depth_type_simple,
             Complexity.COMPLEX: self.model_depth_type_complex
         }
+
+        print("-----Loading Grid Obstacle Detector-----")
+        self.grid_obstacle_detector = GridObstacleDetector(self.width, self.height)
         
         print("-----Loading Complexity Estimation-----")
         self.model_complexity_estimator = ComplexityEstimator()
@@ -91,8 +106,14 @@ class iVision:
         
         # output_image = depth_rgb.copy()
         output_image = cv2.cvtColor(depth_bw, cv2.COLOR_GRAY2BGR)
-        self.model_object_detector.draw_objects_with_depth(output_image, depth_bw, True)
-        
+        yolo_centroids = self.model_object_detector.draw_objects_with_depth(
+            output_image, depth_bw, True, self.depth_warning_threshold
+        )
+        self.grid_obstacle_detector.draw_grid(
+            output_image, depth_bw, masks, self.depth_warning_threshold
+        )
+        depth_centroids = self.grid_obstacle_detector.get_obstacle_centroids()
+
         if not self.side_by_side:
             return output_image
 
@@ -222,6 +243,7 @@ if __name__ == "__main__":
     iVision(
         model_yolo_type=(ObjectDetector.ModelType.YOLO_SEGMENT, ObjectDetector.ModelType.YOLO_SEGMENT),
         model_depth_type=(DepthEstimator.ModelType.MIDAS_V21, DepthEstimator.ModelType.DEPTH_ANYTHING_V2),
+        depth_warning_threshold=180,
         side_by_side=True,
         debug=False,
         cap_id=0

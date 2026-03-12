@@ -1,12 +1,12 @@
-1.  brainstorm variations and alternatives to grid technique for warning system (also think about obstacle persistence)
-2.  merge grid obstacle detector to current pipeline
-3.  merge grid warning system (if it turns out well) to current pipeline
-4.  download and test FastVLM locally
-5.  test metric depth models (metric DepthAnythingV2, metric VideoDepthAnything)
-6.  fine-tune sliding window complexity estimation parameters
-7.  fine-tune indoor complexity estimation (luminance map) parameters further
-8.  fine-tune the grid parameters further, and check if there are more (or better) parameters to add
-9.  convert YOLO 26 Nano (detect & segment) to tflite and replicate their pre/postprocessing
-10. perform some optimizations (find bottlenecks in our code using line_profiler and see if I can optimize/refactor any of them)
-11. find similar (or equivalent) libraries, to the ones used here, for android deployment (kotlin/java)
-12. add optional debug statements (for later, very low priority)
+1. brainstorm variations and alternatives to grid technique for warning system (also think about obstacle persistence)
+2. merge grid warning system (if it turns out well) to current pipeline
+3. download and test FastVLM locally
+4. test metric depth models (metric DepthAnythingV2, metric VideoDepthAnything)
+5. finetune
+        sliding window parameters
+        indoor complexity estimation (luminance map) parameters further
+        the grid parameters further, and check if there are more (or better) parameters to add
+6. convert YOLO 26 Nano (detect & segment) to tflite and replicate their pre/postprocessing
+7. perform some optimizations (find bottlenecks in our code using line_profiler and see if I can optimize/refactor any of them)
+8. find similar (or equivalent) libraries, to the ones used here, for android deployment (kotlin/java)
+9. add optional debug statements (for later, very low priority)
