@@ -1,14 +1,15 @@
 from __future__ import annotations
+
 import cv2
-import torch
+import line_profiler
 import numpy as np
-from typing import Literal
-from numpy import typing as npt
+import numpy.typing as npt
+
+from enum import Enum
+from scipy import ndimage
 from ultralytics import YOLO
 from ultralytics.utils.ops import scale_masks
 from .utils.depth_estimation_helpers import get_mean_depth_box, get_mean_depth_mask
-from enum import Enum
-from scipy import ndimage
 
 class ObjectDetector:
     class ModelType(Enum):
@@ -48,6 +49,7 @@ class ObjectDetector:
         self.overlay_font_scale = overlay_font_scale
         self.overlay_centroid_radius = overlay_centroid_radius
     
+    # @line_profiler.profile
     def get_objects(
         self, 
         frame: npt.NDArray, 

@@ -9,6 +9,7 @@ from numpy import typing as npt
 from datetime import datetime
 from models_download import download_models
 from modules.object_detection import ObjectDetector
+from modules.object_detection_tflite import ObjectDetectorTFLite
 from modules.depth_estimation import DepthEstimator
 from modules.complexity_estimation import SceneType, Weather, Complexity, ComplexityEstimator
 from modules.scene_classification import SceneClassifier
@@ -19,7 +20,7 @@ from modules.grid_obstacle_detection import GridObstacleDetector
 class iVision:
     def __init__(
         self, 
-        model_yolo_type: tuple[ObjectDetector.ModelType, ObjectDetector.ModelType],
+        model_yolo_type: tuple[ObjectDetectorTFLite.ModelType, ObjectDetectorTFLite.ModelType],
         model_depth_type: tuple[DepthEstimator.ModelType, DepthEstimator.ModelType],
         depth_warning_threshold: int = 180,
         side_by_side: bool = False,
@@ -68,7 +69,7 @@ class iVision:
         print("\n-----Loading Models-----\n")
 
         print("-----Loading YOLO-----")
-        self.model_object_detector = ObjectDetector()
+        self.model_object_detector = ObjectDetectorTFLite()
         self.models_yolo = {
             Complexity.SIMPLE: self.model_yolo_type_simple,
             Complexity.COMPLEX: self.model_yolo_type_complex
@@ -241,7 +242,7 @@ class iVision:
 
 if __name__ == "__main__":
     iVision(
-        model_yolo_type=(ObjectDetector.ModelType.YOLO_SEGMENT, ObjectDetector.ModelType.YOLO_SEGMENT),
+        model_yolo_type=(ObjectDetectorTFLite.ModelType.YOLO_SEGMENT, ObjectDetectorTFLite.ModelType.YOLO_SEGMENT),
         model_depth_type=(DepthEstimator.ModelType.MIDAS_V21, DepthEstimator.ModelType.DEPTH_ANYTHING_V2),
         depth_warning_threshold=180,
         side_by_side=True,
