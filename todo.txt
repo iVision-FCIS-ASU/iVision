@@ -6,7 +6,6 @@
         sliding window parameters
         indoor complexity estimation (luminance map) parameters further
         the grid parameters further, and check if there are more (or better) parameters to add
-6. convert YOLO 26 Nano (detect & segment) to tflite and replicate their pre/postprocessing
-7. perform some optimizations (find bottlenecks in our code using line_profiler and see if I can optimize/refactor any of them)
-8. find similar (or equivalent) libraries, to the ones used here, for android deployment (kotlin/java)
-9. add optional debug statements (for later, very low priority)
+6. perform some optimizations (find bottlenecks in our code using line_profiler and see if I can optimize/refactor any of them)
+7. find similar (or equivalent) libraries, to the ones used here, for android deployment (kotlin/java)
+8. add optional debug statements (for later, very low priority)
