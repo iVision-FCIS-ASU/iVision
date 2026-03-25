@@ -49,6 +49,8 @@ def download_models():
         download_file("weights/dpt_swin2_tiny_256.pt", "https://github.com/isl-org/MiDaS/releases/download/v3_1/dpt_swin2_tiny_256.pt")
 
     huggingface_file_names = [
+        "yolo26n_float32.tflite",
+        "yolo26n-seg_float32.tflite",
         "midas_v21_small_256.tflite",
         "depth_anything_v2_224.tflite",
         "complexity_estimation_v1.tflite",
