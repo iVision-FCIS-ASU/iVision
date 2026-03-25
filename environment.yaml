@@ -22,17 +22,22 @@ dependencies:
   - pip:
       - absl-py==2.3.1
       - aiofiles==23.2.1
+      - aistudio-sdk==0.3.8
       - altair==5.5.0
       - annotated-doc==0.0.4
       - annotated-types==0.7.0
       - anyio==4.12.1
       - astunparse==1.6.3
       - attrs==25.4.0
+      - bce-python-sdk==0.9.67
       - certifi==2026.1.4
+      - chardet==7.3.0
       - charset-normalizer==3.4.4
       - click==8.3.1
       - coloredlogs==15.0.1
+      - colorlog==6.10.1
       - contourpy==1.3.2
+      - crc32c==2.8
       - cv2-enumerate-cameras==1.3.3
       - cycler==0.12.1
       - docstring-parser==0.17.0
@@ -43,6 +48,7 @@ dependencies:
       - flatbuffers==25.12.19
       - fonttools==4.61.1
       - fsspec==2026.1.0
+      - future==1.0.0
       - gast==0.7.0
       - google-pasta==0.2.0
       - gradio==4.29.0
@@ -57,6 +63,7 @@ dependencies:
       - huggingface-hub==0.36.0
       - humanfriendly==10.0
       - idna==3.11
+      - imagesize==2.0.0
       - importlib-resources==6.5.2
       - imutils==0.5.4
       - jinja2==3.1.6
@@ -73,6 +80,7 @@ dependencies:
       - matplotlib==3.5.3
       - mdurl==0.1.2
       - ml-dtypes==0.5.4
+      - modelscope==1.35.1
       - mpmath==1.3.0
       - mypy-extensions==1.1.0
       - namex==0.1.0
@@ -84,30 +92,41 @@ dependencies:
       - onnxruntime==1.23.2
       - onnxscript==0.5.7
       - onnxslim==0.1.82
+      - opencv-contrib-python==4.10.0.84
       - opencv-python==4.11.0.86
-      - opt-einsum==3.4.0
+      - opt-einsum==3.3.0
       - optree==0.18.0
       - orjson==3.11.5
       - packaging==26.0
+      - paddleocr==3.4.0
+      - paddlepaddle==3.2.0
+      - paddlex==3.4.2
       - pandas==2.3.3
       - pillow==10.4.0
       - polars==1.37.1
       - polars-runtime-32==1.37.1
+      - prettytable==3.17.0
       - protobuf==6.33.4
+      - py-cpuinfo==9.0.0
+      - pyclipper==1.4.0
+      - pycryptodome==3.23.0
       - pydantic==2.12.5
       - pydantic-core==2.41.5
       - pydub==0.25.1
       - pyparsing==3.3.2
+      - pypdfium2==5.6.0
       - pyreadline3==3.5.4
+      - python-bidi==0.6.7
       - python-dateutil==2.9.0.post0
       - python-multipart==0.0.21
       - pytz==2025.2
-      - pyyaml==5.3.1
+      - pyyaml==6.0.2
       - referencing==0.37.0
       - regex==2026.1.15
       - requests==2.32.5
       - rich==14.3.1
       - rpds-py==0.30.0
+      - ruamel-yaml==0.19.1
       - ruff==0.14.14
       - safetensors==0.7.0
       - scikit-learn==1.0.2
@@ -137,6 +156,7 @@ dependencies:
       - typing-inspect==0.9.0
       - typing-inspection==0.4.2
       - tzdata==2025.3
+      - ujson==5.12.0
       - ultralytics==8.4.6
       - ultralytics-thop==2.0.18
       - urllib3==2.6.3
