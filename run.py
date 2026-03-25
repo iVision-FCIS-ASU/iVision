@@ -16,6 +16,7 @@ from modules.scene_classification import SceneClassifier
 from modules.scene_narration import SceneNarrator
 from modules.utils.sliding_window import SlidingWindow
 from modules.grid_obstacle_detection import GridObstacleDetector
+from modules.reading_mode import ReadingMode
 
 class iVision:
     def __init__(
@@ -59,6 +60,11 @@ class iVision:
         self.frame = np.zeros(1)
         self.IS_RUNNING = True
         self.IS_CAPTION_RUNNING = False
+        self.IS_READING_MODE_RUNNING = False
+        self.close_hotkeys = [ ord("q"), ord("Q") ]
+        self.caption_hotkeys = [ ord("c"), ord("C") ]
+        self.reading_mode_hotkeys = [ ord("r"), ord("R") ]
+
         self.__run()
         
         print("\n========================")
@@ -93,6 +99,9 @@ class iVision:
 
         print("-----Loading Scene Narration-----")
         self.model_scene_narrator = SceneNarrator()
+
+        print("-----Loading Reading Mode-----")
+        self.reading_mode = ReadingMode()
         
         print("\n-----All Models Loaded-----\n")
 
@@ -198,8 +207,22 @@ class iVision:
         print("\n-----STARTING NARRATION-----")
         narration_text = self.model_scene_narrator.get_narration(frame, self.model_scene_classifier)
         print(f"Final Narration: {narration_text}")
-        print("-----STOPPING NARRATION-----")
+        print("-----STOPPING NARRATION-----\n")
         self.IS_CAPTION_RUNNING = False
+
+    def __reading_mode_thread(self, frame: npt.NDArray):
+        print("\n-----STARTING OCR-----")
+        texts, scores, boxes = self.reading_mode.get_text(frame)
+        print(f"Detected {len(texts)} texts!")
+        # ocr_image = reading_mode.draw_boxes(frame)
+        
+        print("-----PRINTING DETECTED TEXT-----")
+        for text, score in zip(texts, scores):
+            print(f"Text ({score:0.2f}): \"{text}\"")
+        print("--------PRINTING STOPPED--------")
+        
+        print("-----STOPPING OCR-----\n")
+        self.IS_READING_MODE_RUNNING = False
 
     def __run(self):
         print("\n-----Starting Main Thread-----\n")
@@ -221,17 +244,22 @@ class iVision:
                 continue
             prev_frame = frame
             
-            output_image = self.__get_output_image(frame)
+            output_image = self.__get_output_image(frame.copy())
             cv2.imshow(f"Object Detection + Depth Estimation", output_image)
 
             key_pressed = cv2.waitKey(1)
 
-            if not self.IS_CAPTION_RUNNING and (key_pressed == ord("c") or key_pressed == ord("C")):
+            if key_pressed in self.close_hotkeys:
+                break
+
+            if not self.IS_CAPTION_RUNNING and key_pressed in self.caption_hotkeys:
                 self.IS_CAPTION_RUNNING = True
                 threading.Thread(target=self.__captioning_thread, args=(frame,), daemon=True).start()
+
+            if not self.IS_READING_MODE_RUNNING and key_pressed in self.reading_mode_hotkeys:
+                self.IS_READING_MODE_RUNNING = True
+                threading.Thread(target=self.__reading_mode_thread, args=(frame,), daemon=True).start()
             
-            if key_pressed == ord("q") or key_pressed == ord("Q"):
-                break
 
         print("-----Stopping Main Thread-----")
         self.IS_RUNNING = False
