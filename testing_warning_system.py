@@ -248,7 +248,14 @@ class GridWarningSystem:
             for i, (xi, xj) in enumerate(pairwise(self.x_points))
         }
         self.grids_inverse = { grid: pos for pos, grid in self.grids.items() }
+        
         self.grid_windows = { pos: SlidingWindow(self.grid_window_size, self.Status.CLEAR) for pos in self.grids }
+
+        for j in range(0, 3):
+            shared_window = SlidingWindow(self.grid_window_size, self.Status.CLEAR)
+            for i in range(1, 6):
+                self.grid_windows[(j, i)] = shared_window
+
         self.grid_warning_data: dict[tuple[int, int], list[tuple[tuple[int, int], str]]] = {}
         self.grid_warning_message: dict[tuple[int, int], str] = {
             (0, 0): "left, head level",
@@ -315,11 +322,33 @@ class GridWarningSystem:
             cv2.putText(output_img, cls, (x, y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, self.color, 2)
     
     def __update_windows(self):
-        for pos in self.grids:
+        # for pos in self.grids:
+        #     if pos in self.grid_warning_data:
+        #         self.grid_windows[pos].append(self.Status.OBSTRUCTED)
+        #     else:
+        #         self.grid_windows[pos].append(self.Status.CLEAR)
+
+        individual_grids = [ (0, 0), (1, 0), (2, 0), (0, 6), (1, 6), (2, 6) ]
+
+        shared_grids = [
+            [ (0, 1), (0, 2), (0, 3), (0, 4), (0, 5) ],
+            [ (1, 1), (1, 2), (1, 3), (1, 4), (1, 5) ],
+            [ (2, 1), (2, 2), (2, 3), (2, 4), (2, 5) ]
+        ]
+
+        for pos in individual_grids:
             if pos in self.grid_warning_data:
                 self.grid_windows[pos].append(self.Status.OBSTRUCTED)
             else:
                 self.grid_windows[pos].append(self.Status.CLEAR)
+        
+        for shared_grid in shared_grids:
+            shared_status = self.Status.CLEAR
+            for pos in shared_grid:
+                if pos in self.grid_warning_data:
+                    shared_status = self.Status.OBSTRUCTED
+                    break
+            self.grid_windows[shared_grid[0]].append(shared_status)
 
     def __create_warnings(self):
         self.warnings: list[str] = []
