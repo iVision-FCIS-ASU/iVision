@@ -40,7 +40,7 @@ class GridObstacleDetector:
         self.__create_grid_points()
         self.grid_set = DisjointSet()
 
-        self.polygon_centroids: None | list[tuple[int, int]] = None
+        self.polygon_centroids: list[tuple[int, int]] = []
 
     def __create_grid_points(self):
         grid_size_x, grid_size_y = self.grid_size
@@ -149,7 +149,7 @@ class GridObstacleDetector:
             cv2.circle(output_img, centroid, radius=self.obstacle_centroid_radius, color=self.color, thickness=-1)
             cv2.polylines(output_img, [coords], isClosed=False, color=self.color, thickness=self.obstacle_thickness)
 
-    def get_obstacle_centroids(self) -> None | list[tuple[int, int]]:
+    def get_obstacle_centroids(self) -> list[tuple[int, int]]:
         return self.polygon_centroids
 
     def draw_grid(
@@ -159,7 +159,7 @@ class GridObstacleDetector:
         masks: list[npt.NDArray] = [],
         depth_warning_threshold: int = 150,
         draw_gridlines = False
-    ) -> npt.NDArray:
+    ):
         self.depth_intensity_threshold = depth_warning_threshold
         self.depth_mean_threshold = depth_warning_threshold / 255
         

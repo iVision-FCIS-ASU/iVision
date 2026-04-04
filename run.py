@@ -66,6 +66,8 @@ class iVision:
         self.caption_hotkeys = [ ord("c"), ord("C") ]
         self.reading_mode_hotkeys = [ ord("r"), ord("R") ]
 
+        self.warnings: list[str] = []
+
         self.__run()
         
         print("\n========================")
@@ -135,7 +137,7 @@ class iVision:
 
         warning_image = frame.copy()
         self.grid_warning_system.draw_grid(warning_image, frame, yolo_centroids, depth_centroids)
-        warnings = self.grid_warning_system.get_warnings()
+        self.warnings = self.grid_warning_system.get_warnings()
 
         if not self.side_by_side:
             return output_image
@@ -151,6 +153,10 @@ class iVision:
                                   np.hstack((yolo_depth_image, grid_depth_image, warning_image))))
 
         return output_image
+
+    def __send_warnings(self):
+        "Placeholder function for when a STT Warning System is added."
+        pass
 
     def __camera_thread(self):
         print("-----Starting Camera Thread-----")
@@ -259,18 +265,17 @@ class iVision:
             prev_frame = frame
             
             output_image = self.__get_output_image(frame.copy())
-            cv2.imshow(f"Object Detection + Depth Estimation", output_image)
-
+            cv2.imshow(f"iVision", output_image)
+            self.__send_warnings()
+            
             key_pressed = cv2.waitKey(1)
 
             if key_pressed in self.close_hotkeys:
                 break
-
-            if not self.IS_CAPTION_RUNNING and key_pressed in self.caption_hotkeys:
+            elif not self.IS_CAPTION_RUNNING and key_pressed in self.caption_hotkeys:
                 self.IS_CAPTION_RUNNING = True
                 threading.Thread(target=self.__captioning_thread, args=(frame,), daemon=True).start()
-
-            if not self.IS_READING_MODE_RUNNING and key_pressed in self.reading_mode_hotkeys:
+            elif not self.IS_READING_MODE_RUNNING and key_pressed in self.reading_mode_hotkeys:
                 self.IS_READING_MODE_RUNNING = True
                 threading.Thread(target=self.__reading_mode_thread, args=(frame,), daemon=True).start()
             
