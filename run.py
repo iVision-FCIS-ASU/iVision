@@ -16,6 +16,7 @@ from modules.scene_classification import SceneClassifier
 from modules.scene_narration import SceneNarrator
 from modules.utils.sliding_window import SlidingWindow
 from modules.grid_obstacle_detection import GridObstacleDetector
+from modules.grid_warning_system import GridWarningSystem
 from modules.reading_mode import ReadingMode
 
 class iVision:
@@ -91,6 +92,9 @@ class iVision:
         print("-----Loading Grid Obstacle Detector-----")
         self.grid_obstacle_detector = GridObstacleDetector(self.width, self.height)
         
+        print("-----Loading Grid Obstacle Detector-----")
+        self.grid_warning_system = GridWarningSystem(self.width, self.height)
+        
         print("-----Loading Complexity Estimation-----")
         self.model_complexity_estimator = ComplexityEstimator()
         
@@ -116,25 +120,35 @@ class iVision:
         
         # output_image = depth_rgb.copy()
         output_image = cv2.cvtColor(depth_bw, cv2.COLOR_GRAY2BGR)
+        depth_bw_bgr = output_image.copy()
+
         yolo_centroids = self.model_object_detector.draw_objects_with_depth(
             output_image, depth_bw, True, self.depth_warning_threshold
         )
+        yolo_depth_image = output_image.copy()
+        
         self.grid_obstacle_detector.draw_grid(
-            output_image, depth_bw, masks, self.depth_warning_threshold
+            output_image, depth_bw, masks, self.depth_warning_threshold, True
         )
         depth_centroids = self.grid_obstacle_detector.get_obstacle_centroids()
+        grid_depth_image = output_image.copy()
+
+        warning_image = frame.copy()
+        self.grid_warning_system.draw_grid(warning_image, frame, yolo_centroids, depth_centroids)
+        warnings = self.grid_warning_system.get_warnings()
 
         if not self.side_by_side:
             return output_image
 
         yolo_image = frame.copy()
+        self.model_object_detector.draw_objects(yolo_image)
+
         label = f"{complexity.name}, {scene_type.name}, {weather.name}"
         cv2.putText(frame, label, (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 5)
         cv2.putText(frame, label, (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
         
-        self.model_object_detector.draw_objects(yolo_image)
-        output_image = np.vstack((np.hstack((frame, yolo_image)), 
-                                  np.hstack((cv2.cvtColor(depth_bw, cv2.COLOR_GRAY2BGR), output_image))))
+        output_image = np.vstack((np.hstack((frame, yolo_image, depth_bw_bgr)), 
+                                  np.hstack((yolo_depth_image, grid_depth_image, warning_image))))
 
         return output_image
 
