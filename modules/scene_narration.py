@@ -10,7 +10,7 @@ from PIL import Image
 from transformers import BlipProcessor, BlipForConditionalGeneration, CLIPProcessor, CLIPModel, CLIPVisionModel, CLIPTextModel, CLIPConfig
 from .scene_classification import SceneClassifier
 from .utils.clip_tokenizer import ClipTokenizer
-from .utils.clip_projection_json import load_projections, save_projections
+from .utils.clip_exporter import clip_export_tokenizer, clip_export_projections, clip_load_projections, clip_export_models
 
 class SceneNarrator:
     def __init__(self):
@@ -19,133 +19,30 @@ class SceneNarrator:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         
         self.blip_processor = BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-base", cache_dir="weights/blip", use_fast=True, local_files_only=True)
+        # self.blip_processor.tokenizer.padding_side = "left"
         self.blip_model = BlipForConditionalGeneration.from_pretrained("Salesforce/blip-image-captioning-base", cache_dir="weights/blip", local_files_only=True).to(self.device)
-        # self.clip_processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch16", cache_dir="weights/blip", use_fast=True, local_files_only=True)
-        # self.clip_processor.tokenizer.save_pretrained("weights/clip_tokenizer")
-        
-        # # backup code to regenerate projections
-        # self.clip_model = CLIPModel.from_pretrained("openai/clip-vit-base-patch16", cache_dir="weights/blip", local_files_only=True).to(self.device)
-        # save_projections(
-        #     "weights/clip_projection/clip_projections.json",
-        #     self.clip_model.visual_projection.weight,
-        #     self.clip_model.visual_projection.bias,
-        #     self.clip_model.text_projection.weight,
-        #     self.clip_model.text_projection.bias
-        # )
-        
+        self.blip_model.eval()
+
+        # clip_export_tokenizer()
         self.clip_tokenizer = ClipTokenizer("weights/clip_tokenizer/tokenizer.json")
         
+        # clip_export_projections()
         self.vision_proj_weight, self.vision_proj_bias, \
-        self.text_proj_weight, self.text_proj_bias = load_projections(
+        self.text_proj_weight, self.text_proj_bias = clip_load_projections(
             "weights/clip_projection/clip_projections.json",
             device=self.device
         )
 
-        self.clip_vision_model = CLIPVisionModel.from_pretrained("openai/clip-vit-base-patch16", cache_dir="weights/blip", local_files_only=True).to(self.device)
-        self.clip_text_model = CLIPTextModel.from_pretrained("openai/clip-vit-base-patch16", cache_dir="weights/blip", local_files_only=True).to(self.device)
+        # self.clip_vision_model = CLIPVisionModel.from_pretrained("openai/clip-vit-base-patch16", cache_dir="weights/blip", local_files_only=True).to(self.device)
+        # self.clip_text_model = CLIPTextModel.from_pretrained("openai/clip-vit-base-patch16", cache_dir="weights/blip", local_files_only=True).to(self.device)
+        # self.clip_vision_model.eval()
+        # self.clip_text_model.eval()
         
-        # self.blip_processor.tokenizer.padding_side = "left"
-        self.blip_model.eval()
-        # self.clip_model.eval()
-        # self.blip_model = torch.compile(self.blip_model)
-        # self.clip_model = torch.compile(self.clip_model)
-        self.clip_vision_model.eval()
-        self.clip_text_model.eval()
-
-        # self.__export_models()
-
-        self.sess_vision = ort.InferenceSession("weights/clip_model/clip_vision.onnx")
-        self.sess_text = ort.InferenceSession("weights/clip_model/clip_text.onnx")
-
-        # self.__compare_models()
+        # clip_export_models()
+        self.clip_onnx_vision = ort.InferenceSession("weights/clip_model/clip_vision.onnx")
+        self.clip_onnx_text = ort.InferenceSession("weights/clip_model/clip_text.onnx")
 
         print("-----SCENE NARRATION INITIALIZED-----\n")
-
-    @torch.inference_mode()
-    def __export_models(self):
-        class CLIPVisionWrapper(torch.nn.Module):
-            def __init__(self, clip_vision_model: CLIPVisionModel):
-                super().__init__()
-                self.clip_vision_model = clip_vision_model
-
-            def forward(self, pixel_values):
-                vision_outputs = self.clip_vision_model(pixel_values=pixel_values)
-                return vision_outputs.pooler_output
-
-        clip_vision_wrapper = CLIPVisionWrapper(self.clip_vision_model)        
-        dummy_image = torch.randn(1, 3, 224, 224)
-        torch.onnx.export(
-            clip_vision_wrapper,
-            (dummy_image,),
-            "weights/clip_model/clip_vision.onnx",
-            input_names=["pixel_values"],
-            output_names=["image_embeds"],
-            dynamic_axes={
-                "pixel_values": {0: "batch"},
-                "image_embeds": {0: "batch"}
-            },
-            opset_version=18
-        )
-
-        class CLIPTextWrapper(torch.nn.Module):
-            def __init__(self, clip_text_model: CLIPTextModel):
-                super().__init__()
-                self.clip_text_model = clip_text_model
-
-            def forward(self, input_ids, attention_mask):
-                text_outputs = self.clip_text_model(input_ids=input_ids, attention_mask=attention_mask)
-                return text_outputs.pooler_output
-        
-        clip_text_wrapper = CLIPTextWrapper(self.clip_text_model)
-        dummy_input_ids = torch.ones((2, 77), dtype=torch.long)
-        dummy_attention_mask = torch.ones((2, 77), dtype=torch.long)
-        torch.onnx.export(
-            clip_text_wrapper,
-            (dummy_input_ids, dummy_attention_mask),
-            "weights/clip_model/clip_text.onnx",
-            input_names=["input_ids", "attention_mask"],
-            output_names=["text_embeds"],
-            dynamic_axes={
-                "input_ids": {0: "batch"},
-                "attention_mask": {0: "batch"},
-                "text_embeds": {0: "batch"}
-            },
-            opset_version=18
-        )     
-
-    def __compare_models(self):
-        # comparing vision models
-        dummy_image = torch.randn(8, 3, 224, 224)
-        
-        with torch.inference_mode():
-            torch_out_vision = self.clip_vision_model(dummy_image).pooler_output
-
-        onnx_out_vision = self.sess_vision.run(
-            None,
-            {"pixel_values": dummy_image.cpu().numpy()}
-        )[0]
-
-        print(f"Vision Model: {np.allclose(torch_out_vision.cpu().numpy(), onnx_out_vision, atol=1e-4, rtol=1e-4)}")
-
-        # comparing text models
-        dummy_input_ids = torch.ones((1, 77), dtype=torch.long)
-        dummy_attention_mask = torch.ones((1, 77), dtype=torch.long)
-
-        with torch.inference_mode():
-            torch_out_text = self.clip_text_model(
-                input_ids=dummy_input_ids,
-                attention_mask=dummy_attention_mask
-            ).pooler_output
-        
-        onnx_out_text = self.sess_text.run(
-            None,
-            {
-                "input_ids": dummy_input_ids.cpu().numpy(),
-                "attention_mask": dummy_attention_mask.cpu().numpy()
-            }
-        )[0]
-
-        print(f"Text Model: {np.allclose(torch_out_text.cpu().numpy(), onnx_out_text, atol=1e-4, rtol=1e-4)}")
 
     def __preprocess(self, frame: npt.NDArray) -> Image:
         raw_img = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -222,7 +119,7 @@ class SceneNarrator:
             out = out + bias
         return out
 
-    def __clip_get_best_caption_orig(self, raw_img: Image, captions: list[str]) -> tuple[str, float]:
+    def __clip_get_best_caption_torch(self, raw_img: Image, captions: list[str]) -> tuple[str, float]:
         image_tensor = self.__clip_preprocess_image(raw_img)
         image_batch = torch.stack([image_tensor] * len(captions)).to(self.device)
 
@@ -252,12 +149,12 @@ class SceneNarrator:
 
         input_ids, attention_mask = self.clip_tokenizer.encode(captions)
 
-        vision_outputs = self.sess_vision.run(
+        vision_outputs = self.clip_onnx_vision.run(
             None,
             {"pixel_values": image_batch.cpu().numpy()}
         )[0]
 
-        text_outputs = self.sess_text.run(
+        text_outputs = self.clip_onnx_text.run(
             None,
             {
                 "input_ids": input_ids.cpu().numpy(),
