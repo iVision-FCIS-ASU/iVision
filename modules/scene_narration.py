@@ -1,12 +1,14 @@
 import cv2
+import line_profiler
+import numpy as np
+import numpy.typing as npt
 import time
 import torch
-import numpy as np
-import line_profiler
+import torchvision.transforms as transforms
 from PIL import Image
-from numpy import typing as npt
-from .scene_classification import SceneClassifier
 from transformers import BlipProcessor, BlipForConditionalGeneration, CLIPProcessor, CLIPModel
+from .scene_classification import SceneClassifier
+from .utils.clip_tokenizer import ClipTokenizer
 
 class SceneNarrator:
     def __init__(self):
@@ -21,6 +23,11 @@ class SceneNarrator:
         # self.blip_processor.tokenizer.padding_side = "left"
         self.blip_model.eval()
         self.clip_model.eval()
+        # self.blip_model = torch.compile(self.blip_model)
+        # self.clip_model = torch.compile(self.clip_model)
+
+        self.clip_tokenizer = ClipTokenizer("weights/meow/tokenizer.json")
+        self.clip_tokenizer.encode([])
 
         print("-----SCENE NARRATION INITIALIZED-----\n")
 
@@ -81,6 +88,18 @@ class SceneNarrator:
         print(f"Total Inference Time : {(scene_time + blip_time + clip_time):.3f}s")
         print(f"{'='*30}\n")
 
+    def __clip_preprocess_image(self, image: Image.Image) -> torch.Tensor:
+        transform = transforms.Compose([
+            transforms.Resize(224, interpolation=transforms.InterpolationMode.BICUBIC),
+            transforms.CenterCrop(224),
+            transforms.ToTensor(),  # converts to [0,1] and CHW
+            transforms.Normalize(
+                mean=[0.48145466, 0.4578275, 0.40821073],
+                std=[0.26862954, 0.26130258, 0.27577711],
+            ),
+        ])
+        return transform(image)
+
     @torch.inference_mode()
     def get_narration(self, frame: npt.NDArray, scene_classifier: SceneClassifier) -> str:
         print("\n-----PREDICTING SCENE TYPE-----")
@@ -103,14 +122,64 @@ class SceneNarrator:
         
         print("-----EVALUATING CLIP-----")
         clip_start = time.time()
-        inputs = self.clip_processor(
-            text=captions, 
-            images=[raw_img]*len(captions), 
-            return_tensors="pt", 
-            padding=True
-        ).to(self.device)
+
+        image_tensor = self.__clip_preprocess_image(raw_img)
+        image_batch = torch.stack([image_tensor] * len(captions)).to(self.device)
         
-        out = self.clip_model(**inputs)
+        # self.clip_processor.tokenizer.save_pretrained("weights/meow")
+
+        # tokenizer = self.clip_processor.tokenizer
+        # text_inputs = tokenizer(
+        #     captions,
+        #     padding="max_length",
+        #     max_length=77,
+        #     truncation=True,
+        #     return_tensors="pt"
+        # )
+
+        # input_ids = text_inputs["input_ids"].to(self.device)
+        # attention_mask = text_inputs["attention_mask"].to(self.device)
+
+        custom_ids, custom_mask = self.clip_tokenizer.encode(captions)
+
+        # print((input_ids == custom_ids).all())
+        # for i in range(len(captions)):
+        #     print("TEXT:", captions[i])
+        #     print("HF IDS:     ", input_ids[i][:20])
+        #     print("CUSTOM IDS: ", custom_ids[i][:20])
+        #     print("HF MASK:    ", attention_mask[i][:20])
+        #     print("CUSTOM MASK:", custom_mask[i][:20])
+        #     print()
+        # for i in range(len(captions)):
+        #     diff_positions = (input_ids[i] != custom_ids[i]).nonzero(as_tuple=True)[0]
+        #     if len(diff_positions) > 0:
+        #         print("TEXT:", captions[i])
+        #         print("DIFF POS:", diff_positions[:10])  # show first few diffs
+        #         print("HF TAIL:     ", input_ids[i][diff_positions[:10]])
+        #         print("CUSTOM TAIL: ", custom_ids[i][diff_positions[:10]])
+        #         print()
+
+
+        # out = self.clip_model(
+        #     pixel_values=image_batch,
+        #     input_ids=input_ids,
+        #     attention_mask=attention_mask
+        # )
+
+        out = self.clip_model(
+            pixel_values=image_batch,
+            input_ids=custom_ids,
+            attention_mask=custom_mask
+        )
+
+        # inputs = self.clip_processor(
+        #     text=captions, 
+        #     images=[raw_img]*len(captions), 
+        #     return_tensors="pt", 
+        #     padding=True
+        # ).to(self.device)
+        # out = self.clip_model(**inputs)
+
         img_emb = out.image_embeds / out.image_embeds.norm(dim=-1, keepdim=True)
         txt_emb = out.text_embeds / out.text_embeds.norm(dim=-1, keepdim=True)
         scores = (img_emb * txt_emb).sum(dim=1).detach().cpu().numpy()
