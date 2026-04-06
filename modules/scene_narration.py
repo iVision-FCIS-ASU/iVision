@@ -22,19 +22,14 @@ class SceneNarrator:
         # self.clip_processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch16", cache_dir="weights/blip", use_fast=True, local_files_only=True)
         # self.clip_processor.tokenizer.save_pretrained("weights/clip_tokenizer")
         
-        self.clip_model = CLIPModel.from_pretrained("openai/clip-vit-base-patch16", cache_dir="weights/blip", local_files_only=True).to(self.device)
-
-        # self.vision_proj_weight = self.clip_model.visual_projection.weight
-        # self.vision_proj_bias   = self.clip_model.visual_projection.bias
-        # self.text_proj_weight = self.clip_model.text_projection.weight
-        # self.text_proj_bias   = self.clip_model.text_projection.bias
-
+        # # backup code to regenerate projections
+        # self.clip_model = CLIPModel.from_pretrained("openai/clip-vit-base-patch16", cache_dir="weights/blip", local_files_only=True).to(self.device)
         # save_projections(
         #     "weights/clip_projection/clip_projections.json",
-        #     self.vision_proj_weight,
-        #     self.vision_proj_bias,
-        #     self.text_proj_weight,
-        #     self.text_proj_bias
+        #     self.clip_model.visual_projection.weight,
+        #     self.clip_model.visual_projection.bias,
+        #     self.clip_model.text_projection.weight,
+        #     self.clip_model.text_projection.bias
         # )
         
         self.vision_proj_weight, self.vision_proj_bias, \
@@ -43,13 +38,12 @@ class SceneNarrator:
             device=self.device
         )
 
-        # clip_config = CLIPConfig.from_pretrained("openai/clip-vit-base-patch16", cache_dir="weights/blip", local_files_only=True)
         self.clip_vision_model = CLIPVisionModel.from_pretrained("openai/clip-vit-base-patch16", cache_dir="weights/blip", local_files_only=True).to(self.device)
         self.clip_text_model = CLIPTextModel.from_pretrained("openai/clip-vit-base-patch16", cache_dir="weights/blip", local_files_only=True).to(self.device)
         
         # self.blip_processor.tokenizer.padding_side = "left"
         self.blip_model.eval()
-        self.clip_model.eval()
+        # self.clip_model.eval()
         # self.blip_model = torch.compile(self.blip_model)
         # self.clip_model = torch.compile(self.clip_model)
         self.clip_vision_model.eval()
@@ -145,34 +139,15 @@ class SceneNarrator:
         
         image_embeds = vision_outputs.pooler_output
         text_embeds = text_outputs.pooler_output
-        
-        # image_embeds = self.clip_vision_model.visual_projection(image_embeds)
-        # text_embeds = self.clip_text_model.text_projection(text_embeds)
-        
         image_embeds = self.__linear(image_embeds, self.vision_proj_weight, self.vision_proj_bias)
         text_embeds  = self.__linear(text_embeds, self.text_proj_weight, self.text_proj_bias)
-
-        print(image_embeds.shape)
-        print(text_embeds.shape)
         
-        new_img_emb = image_embeds / image_embeds.norm(dim=-1, keepdim=True)
-        new_txt_emb = text_embeds / text_embeds.norm(dim=-1, keepdim=True)
-        new_scores = (new_img_emb * new_txt_emb).sum(dim=1).detach().cpu().numpy()
-
-        out = self.clip_model(
-            pixel_values=image_batch,
-            input_ids=input_ids,
-            attention_mask=attention_mask
-        )
-
-        img_emb = out.image_embeds / out.image_embeds.norm(dim=-1, keepdim=True)
-        txt_emb = out.text_embeds / out.text_embeds.norm(dim=-1, keepdim=True)
+        img_emb = image_embeds / image_embeds.norm(dim=-1, keepdim=True)
+        txt_emb = text_embeds / text_embeds.norm(dim=-1, keepdim=True)
         scores = (img_emb * txt_emb).sum(dim=1).detach().cpu().numpy()
-
-        print(np.allclose(scores, new_scores, atol=1e-4))
         
-        best_idx = np.argmax(new_scores)
-        best_score = float(new_scores[best_idx])
+        best_idx = np.argmax(scores)
+        best_score = float(scores[best_idx])
         best_caption = self.__post_process(captions[best_idx])
 
         return best_caption, best_score
