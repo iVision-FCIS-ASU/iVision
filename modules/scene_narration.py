@@ -18,7 +18,8 @@ class SceneNarrator:
         
         self.blip_processor = BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-base", cache_dir="weights/blip", use_fast=True, local_files_only=True)
         self.blip_model = BlipForConditionalGeneration.from_pretrained("Salesforce/blip-image-captioning-base", cache_dir="weights/blip", local_files_only=True).to(self.device)
-        self.clip_processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch16", cache_dir="weights/blip", use_fast=True, local_files_only=True)
+        # self.clip_processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch16", cache_dir="weights/blip", use_fast=True, local_files_only=True)
+        # self.clip_processor.tokenizer.save_pretrained("weights/clip_tokenizer")
         self.clip_model = CLIPModel.from_pretrained("openai/clip-vit-base-patch16", cache_dir="weights/blip", local_files_only=True).to(self.device)
         # self.blip_processor.tokenizer.padding_side = "left"
         self.blip_model.eval()
@@ -26,8 +27,7 @@ class SceneNarrator:
         # self.blip_model = torch.compile(self.blip_model)
         # self.clip_model = torch.compile(self.clip_model)
 
-        self.clip_tokenizer = ClipTokenizer("weights/meow/tokenizer.json")
-        self.clip_tokenizer.encode([])
+        self.clip_tokenizer = ClipTokenizer("weights/clip_tokenizer/tokenizer.json")
 
         print("-----SCENE NARRATION INITIALIZED-----\n")
 
@@ -99,6 +99,36 @@ class SceneNarrator:
             ),
         ])
         return transform(image)
+    
+    def __clip_get_best_caption(self, raw_img: Image, captions: list[str]) -> tuple[str, float]:
+        image_tensor = self.__clip_preprocess_image(raw_img)
+        image_batch = torch.stack([image_tensor] * len(captions)).to(self.device)
+
+        input_ids, attention_mask = self.clip_tokenizer.encode(captions)
+
+        out = self.clip_model(
+            pixel_values=image_batch,
+            input_ids=input_ids,
+            attention_mask=attention_mask
+        )
+
+        # inputs = self.clip_processor(
+        #     text=captions, 
+        #     images=[raw_img]*len(captions), 
+        #     return_tensors="pt", 
+        #     padding=True
+        # ).to(self.device)
+        # out = self.clip_model(**inputs)
+
+        img_emb = out.image_embeds / out.image_embeds.norm(dim=-1, keepdim=True)
+        txt_emb = out.text_embeds / out.text_embeds.norm(dim=-1, keepdim=True)
+        scores = (img_emb * txt_emb).sum(dim=1).detach().cpu().numpy()
+        
+        best_idx = np.argmax(scores)
+        best_score = float(scores[best_idx])
+        best_caption = self.__post_process(captions[best_idx])
+
+        return best_caption, best_score
 
     @torch.inference_mode()
     def get_narration(self, frame: npt.NDArray, scene_classifier: SceneClassifier) -> str:
@@ -122,71 +152,7 @@ class SceneNarrator:
         
         print("-----EVALUATING CLIP-----")
         clip_start = time.time()
-
-        image_tensor = self.__clip_preprocess_image(raw_img)
-        image_batch = torch.stack([image_tensor] * len(captions)).to(self.device)
-        
-        # self.clip_processor.tokenizer.save_pretrained("weights/meow")
-
-        # tokenizer = self.clip_processor.tokenizer
-        # text_inputs = tokenizer(
-        #     captions,
-        #     padding="max_length",
-        #     max_length=77,
-        #     truncation=True,
-        #     return_tensors="pt"
-        # )
-
-        # input_ids = text_inputs["input_ids"].to(self.device)
-        # attention_mask = text_inputs["attention_mask"].to(self.device)
-
-        custom_ids, custom_mask = self.clip_tokenizer.encode(captions)
-
-        # print((input_ids == custom_ids).all())
-        # for i in range(len(captions)):
-        #     print("TEXT:", captions[i])
-        #     print("HF IDS:     ", input_ids[i][:20])
-        #     print("CUSTOM IDS: ", custom_ids[i][:20])
-        #     print("HF MASK:    ", attention_mask[i][:20])
-        #     print("CUSTOM MASK:", custom_mask[i][:20])
-        #     print()
-        # for i in range(len(captions)):
-        #     diff_positions = (input_ids[i] != custom_ids[i]).nonzero(as_tuple=True)[0]
-        #     if len(diff_positions) > 0:
-        #         print("TEXT:", captions[i])
-        #         print("DIFF POS:", diff_positions[:10])  # show first few diffs
-        #         print("HF TAIL:     ", input_ids[i][diff_positions[:10]])
-        #         print("CUSTOM TAIL: ", custom_ids[i][diff_positions[:10]])
-        #         print()
-
-
-        # out = self.clip_model(
-        #     pixel_values=image_batch,
-        #     input_ids=input_ids,
-        #     attention_mask=attention_mask
-        # )
-
-        out = self.clip_model(
-            pixel_values=image_batch,
-            input_ids=custom_ids,
-            attention_mask=custom_mask
-        )
-
-        # inputs = self.clip_processor(
-        #     text=captions, 
-        #     images=[raw_img]*len(captions), 
-        #     return_tensors="pt", 
-        #     padding=True
-        # ).to(self.device)
-        # out = self.clip_model(**inputs)
-
-        img_emb = out.image_embeds / out.image_embeds.norm(dim=-1, keepdim=True)
-        txt_emb = out.text_embeds / out.text_embeds.norm(dim=-1, keepdim=True)
-        scores = (img_emb * txt_emb).sum(dim=1).detach().cpu().numpy()
-        
-        best_idx = np.argmax(scores)
-        best_score = float(scores[best_idx])
-        best_caption = self.__post_process(captions[best_idx])
+        best_caption, best_score = self.__clip_get_best_caption(raw_img, captions)
         clip_time = time.time() - clip_start
         print("-----EVALUATED CLIP-----")
 
