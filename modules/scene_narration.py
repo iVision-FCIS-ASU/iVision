@@ -6,9 +6,10 @@ import time
 import torch
 import torchvision.transforms as transforms
 from PIL import Image
-from transformers import BlipProcessor, BlipForConditionalGeneration, CLIPProcessor, CLIPModel
+from transformers import BlipProcessor, BlipForConditionalGeneration, CLIPProcessor, CLIPModel, CLIPVisionModel, CLIPTextModel, CLIPConfig
 from .scene_classification import SceneClassifier
 from .utils.clip_tokenizer import ClipTokenizer
+from .utils.clip_projection_json import load_projections, save_projections
 
 class SceneNarrator:
     def __init__(self):
@@ -20,12 +21,39 @@ class SceneNarrator:
         self.blip_model = BlipForConditionalGeneration.from_pretrained("Salesforce/blip-image-captioning-base", cache_dir="weights/blip", local_files_only=True).to(self.device)
         # self.clip_processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch16", cache_dir="weights/blip", use_fast=True, local_files_only=True)
         # self.clip_processor.tokenizer.save_pretrained("weights/clip_tokenizer")
+        
         self.clip_model = CLIPModel.from_pretrained("openai/clip-vit-base-patch16", cache_dir="weights/blip", local_files_only=True).to(self.device)
+
+        # self.vision_proj_weight = self.clip_model.visual_projection.weight
+        # self.vision_proj_bias   = self.clip_model.visual_projection.bias
+        # self.text_proj_weight = self.clip_model.text_projection.weight
+        # self.text_proj_bias   = self.clip_model.text_projection.bias
+
+        # save_projections(
+        #     "weights/clip_projection/clip_projections.json",
+        #     self.vision_proj_weight,
+        #     self.vision_proj_bias,
+        #     self.text_proj_weight,
+        #     self.text_proj_bias
+        # )
+        
+        self.vision_proj_weight, self.vision_proj_bias, \
+        self.text_proj_weight, self.text_proj_bias = load_projections(
+            "weights/clip_projection/clip_projections.json",
+            device=self.device
+        )
+
+        # clip_config = CLIPConfig.from_pretrained("openai/clip-vit-base-patch16", cache_dir="weights/blip", local_files_only=True)
+        self.clip_vision_model = CLIPVisionModel.from_pretrained("openai/clip-vit-base-patch16", cache_dir="weights/blip", local_files_only=True).to(self.device)
+        self.clip_text_model = CLIPTextModel.from_pretrained("openai/clip-vit-base-patch16", cache_dir="weights/blip", local_files_only=True).to(self.device)
+        
         # self.blip_processor.tokenizer.padding_side = "left"
         self.blip_model.eval()
         self.clip_model.eval()
         # self.blip_model = torch.compile(self.blip_model)
         # self.clip_model = torch.compile(self.clip_model)
+        self.clip_vision_model.eval()
+        self.clip_text_model.eval()
 
         self.clip_tokenizer = ClipTokenizer("weights/clip_tokenizer/tokenizer.json")
 
@@ -100,11 +128,36 @@ class SceneNarrator:
         ])
         return transform(image)
     
+    def __linear(self, x, weight, bias):
+        out = x @ weight.T
+        if bias is not None:
+            out = out + bias
+        return out
+
     def __clip_get_best_caption(self, raw_img: Image, captions: list[str]) -> tuple[str, float]:
         image_tensor = self.__clip_preprocess_image(raw_img)
         image_batch = torch.stack([image_tensor] * len(captions)).to(self.device)
 
         input_ids, attention_mask = self.clip_tokenizer.encode(captions)
+
+        vision_outputs = self.clip_vision_model(pixel_values=image_batch)
+        text_outputs = self.clip_text_model(input_ids=input_ids, attention_mask=attention_mask)
+        
+        image_embeds = vision_outputs.pooler_output
+        text_embeds = text_outputs.pooler_output
+        
+        # image_embeds = self.clip_vision_model.visual_projection(image_embeds)
+        # text_embeds = self.clip_text_model.text_projection(text_embeds)
+        
+        image_embeds = self.__linear(image_embeds, self.vision_proj_weight, self.vision_proj_bias)
+        text_embeds  = self.__linear(text_embeds, self.text_proj_weight, self.text_proj_bias)
+
+        print(image_embeds.shape)
+        print(text_embeds.shape)
+        
+        new_img_emb = image_embeds / image_embeds.norm(dim=-1, keepdim=True)
+        new_txt_emb = text_embeds / text_embeds.norm(dim=-1, keepdim=True)
+        new_scores = (new_img_emb * new_txt_emb).sum(dim=1).detach().cpu().numpy()
 
         out = self.clip_model(
             pixel_values=image_batch,
@@ -112,20 +165,14 @@ class SceneNarrator:
             attention_mask=attention_mask
         )
 
-        # inputs = self.clip_processor(
-        #     text=captions, 
-        #     images=[raw_img]*len(captions), 
-        #     return_tensors="pt", 
-        #     padding=True
-        # ).to(self.device)
-        # out = self.clip_model(**inputs)
-
         img_emb = out.image_embeds / out.image_embeds.norm(dim=-1, keepdim=True)
         txt_emb = out.text_embeds / out.text_embeds.norm(dim=-1, keepdim=True)
         scores = (img_emb * txt_emb).sum(dim=1).detach().cpu().numpy()
+
+        print(np.allclose(scores, new_scores, atol=1e-4))
         
-        best_idx = np.argmax(scores)
-        best_score = float(scores[best_idx])
+        best_idx = np.argmax(new_scores)
+        best_score = float(new_scores[best_idx])
         best_caption = self.__post_process(captions[best_idx])
 
         return best_caption, best_score
