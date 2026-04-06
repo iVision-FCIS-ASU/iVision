@@ -2,6 +2,7 @@ import cv2
 import line_profiler
 import numpy as np
 import numpy.typing as npt
+import onnxruntime as ort
 import time
 import torch
 import torchvision.transforms as transforms
@@ -32,6 +33,8 @@ class SceneNarrator:
         #     self.clip_model.text_projection.bias
         # )
         
+        self.clip_tokenizer = ClipTokenizer("weights/clip_tokenizer/tokenizer.json")
+        
         self.vision_proj_weight, self.vision_proj_bias, \
         self.text_proj_weight, self.text_proj_bias = load_projections(
             "weights/clip_projection/clip_projections.json",
@@ -49,9 +52,116 @@ class SceneNarrator:
         self.clip_vision_model.eval()
         self.clip_text_model.eval()
 
-        self.clip_tokenizer = ClipTokenizer("weights/clip_tokenizer/tokenizer.json")
+        # self.__export_models()
+
+        self.sess_vision = ort.InferenceSession("weights/clip_model/clip_vision.onnx")
+        self.sess_text = ort.InferenceSession("weights/clip_model/clip_text.onnx")
+
+        # print(self.sess_text.get_inputs()[0].shape)
+        # print(self.sess_text.get_inputs()[1].shape)
+
+        # input_ids = torch.ones((16, 77), dtype=torch.long).cpu().numpy()
+        # attention_mask = torch.ones((16, 77), dtype=torch.long).cpu().numpy()
+        # onnx_text_out = self.sess_text.run(
+        #     None,
+        #     {
+        #         "input_ids": input_ids,
+        #         "attention_mask": attention_mask
+        #     }
+        # )[0]
+
+        # self.__compare_models()
 
         print("-----SCENE NARRATION INITIALIZED-----\n")
+
+    @torch.inference_mode()
+    def __export_models(self):
+        class CLIPVisionWrapper(torch.nn.Module):
+            def __init__(self, clip_vision_model: CLIPVisionModel):
+                super().__init__()
+                self.clip_vision_model = clip_vision_model
+
+            def forward(self, pixel_values):
+                vision_outputs = self.clip_vision_model(pixel_values=pixel_values)
+                return vision_outputs.pooler_output
+
+        clip_vision_wrapper = CLIPVisionWrapper(self.clip_vision_model)        
+        dummy_image = torch.randn(1, 3, 224, 224)
+        torch.onnx.export(
+            clip_vision_wrapper,
+            (dummy_image,),
+            "weights/clip_model/clip_vision.onnx",
+            input_names=["pixel_values"],
+            output_names=["image_embeds"],
+            dynamic_axes={
+                "pixel_values": {0: "batch"},
+                "image_embeds": {0: "batch"}
+            },
+            opset_version=18
+        )
+
+        class CLIPTextWrapper(torch.nn.Module):
+            def __init__(self, clip_text_model: CLIPTextModel):
+                super().__init__()
+                self.clip_text_model = clip_text_model
+
+            def forward(self, input_ids, attention_mask):
+                text_outputs = self.clip_text_model(input_ids=input_ids, attention_mask=attention_mask)
+                return text_outputs.pooler_output
+        
+        clip_text_wrapper = CLIPTextWrapper(self.clip_text_model)
+        dummy_input_ids = torch.ones((2, 77), dtype=torch.long)
+        dummy_attention_mask = torch.ones((2, 77), dtype=torch.long)
+        torch.onnx.export(
+            clip_text_wrapper,
+            (dummy_input_ids, dummy_attention_mask),
+            "weights/clip_model/clip_text.onnx",
+            input_names=["input_ids", "attention_mask"],
+            output_names=["text_embeds"],
+            dynamic_axes={
+                "input_ids": {0: "batch"},
+                "attention_mask": {0: "batch"},
+                "text_embeds": {0: "batch"}
+            },
+            opset_version=18
+        )     
+
+    def __compare_models(self):
+        # comparing vision models
+        dummy_image = torch.randn(1, 3, 224, 224)
+        
+        with torch.inference_mode():
+            torch_out_vision = self.clip_vision_model(dummy_image)
+            torch_out_vision = torch_out_vision.last_hidden_state if hasattr(torch_out_vision, "last_hidden_state") else torch_out_vision
+
+        onnx_out_vision = self.sess_vision.run(
+            None,
+            {"pixel_values": dummy_image.cpu().numpy()}
+        )[0]
+
+        print(f"Vision Model: {np.allclose(torch_out_vision.cpu().numpy(), onnx_out_vision, atol=1e-4, rtol=1e-4)}")
+
+        # comparing text models
+        dummy_input_ids = torch.ones((1, 77), dtype=torch.long)
+        dummy_attention_mask = torch.ones((1, 77), dtype=torch.long)
+
+        with torch.inference_mode():
+            torch_out_text = self.clip_text_model(
+                input_ids=dummy_input_ids,
+                attention_mask=dummy_attention_mask
+            )
+
+            torch_out_text = torch_out_text.last_hidden_state
+        
+        onnx_out_text = self.sess_text.run(
+            None,
+            {
+                "input_ids": dummy_input_ids.cpu().numpy(),
+                "attention_mask": dummy_attention_mask.cpu().numpy()
+            }
+        )[0]
+
+        print(f"Text Model: {np.allclose(torch_out_text.cpu().numpy(), onnx_out_text, atol=1e-4, rtol=1e-4)}")
 
     def __preprocess(self, frame: npt.NDArray) -> Image:
         raw_img = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -132,6 +242,7 @@ class SceneNarrator:
         image_tensor = self.__clip_preprocess_image(raw_img)
         image_batch = torch.stack([image_tensor] * len(captions)).to(self.device)
 
+        # original pytorch models
         input_ids, attention_mask = self.clip_tokenizer.encode(captions)
 
         vision_outputs = self.clip_vision_model(pixel_values=image_batch)
@@ -139,15 +250,77 @@ class SceneNarrator:
         
         image_embeds = vision_outputs.pooler_output
         text_embeds = text_outputs.pooler_output
+        # print("=== PyTorch ===")
+        # print(image_embeds[0, :5])
+        # print(text_embeds[0, :5])
+        
         image_embeds = self.__linear(image_embeds, self.vision_proj_weight, self.vision_proj_bias)
         text_embeds  = self.__linear(text_embeds, self.text_proj_weight, self.text_proj_bias)
         
         img_emb = image_embeds / image_embeds.norm(dim=-1, keepdim=True)
         txt_emb = text_embeds / text_embeds.norm(dim=-1, keepdim=True)
+
+        # print(img_emb.shape)
+        # print(txt_emb.shape)
+
         scores = (img_emb * txt_emb).sum(dim=1).detach().cpu().numpy()
         
-        best_idx = np.argmax(scores)
-        best_score = float(scores[best_idx])
+        # onnx
+        pixel_values = image_batch.cpu().numpy()
+        input_ids_np = input_ids.cpu().numpy()
+        attention_mask_np = attention_mask.cpu().numpy()
+
+        onnx_vision_out = self.sess_vision.run(
+            None,
+            {"pixel_values": pixel_values}
+        )[0]
+
+        onnx_text_out = self.sess_text.run(
+            None,
+            {
+                "input_ids": input_ids_np,
+                "attention_mask": attention_mask_np
+            }
+        )[0]
+
+        # onnx_image_embeds = torch.tensor(onnx_vision_out[:, 0, :], device=self.device)
+        # onnx_text_embeds  = torch.tensor(onnx_text_out[:, 0, :], device=self.device)
+        onnx_image_embeds = torch.tensor(onnx_vision_out, device=self.device)
+        onnx_text_embeds  = torch.tensor(onnx_text_out, device=self.device)
+        # print("=== ONNX ===")
+        # print(onnx_image_embeds[0, :5])
+        # print(onnx_text_embeds[0, :5])
+
+        onnx_image_embeds = self.__linear(onnx_image_embeds, self.vision_proj_weight, self.vision_proj_bias)
+        onnx_text_embeds  = self.__linear(onnx_text_embeds, self.text_proj_weight, self.text_proj_bias)
+        
+        onnx_img_emb = onnx_image_embeds / onnx_image_embeds.norm(dim=-1, keepdim=True)
+        onnx_txt_emb = onnx_text_embeds / onnx_text_embeds.norm(dim=-1, keepdim=True)
+        
+        # print(onnx_img_emb.shape)
+        # print(onnx_txt_emb.shape)
+        
+        onnx_scores = (onnx_img_emb * onnx_txt_emb).sum(dim=1).detach().cpu().numpy()
+
+        # print(f"Close: {np.allclose(scores, onnx_scores, atol=1e-4, rtol=1e-4)}")
+
+        # print("vision_outputs diff:",
+        #     torch.max(torch.abs(
+        #         vision_outputs.pooler_output -
+        #         # torch.tensor(onnx_vision_out[:, 0, :], device=self.device)
+        #         torch.tensor(onnx_vision_out, device=self.device)
+        #     )))
+
+        # print("text_outputs diff:",
+        #     torch.max(torch.abs(
+        #         text_outputs.pooler_output -
+        #         # torch.tensor(onnx_text_out[:, 0, :], device=self.device)
+        #         torch.tensor(onnx_text_out, device=self.device)
+        #     )))
+        
+
+        best_idx = np.argmax(onnx_scores)
+        best_score = float(onnx_scores[best_idx])
         best_caption = self.__post_process(captions[best_idx])
 
         return best_caption, best_score
