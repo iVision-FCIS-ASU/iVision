@@ -10,6 +10,7 @@ from PIL import Image
 from transformers import BlipProcessor, BlipForConditionalGeneration, CLIPProcessor, CLIPModel, CLIPVisionModel, CLIPTextModel, CLIPConfig, BlipImageProcessorFast, BertTokenizerFast
 from .scene_classification import SceneClassifier
 from .utils.blip_tokenizer import BlipTokenizer
+from .utils.blip_exporter import blip_export_tokenizer
 from .utils.clip_tokenizer import ClipTokenizer
 from .utils.clip_exporter import clip_export_tokenizer, clip_export_projections, clip_load_projections, clip_export_models
 
@@ -97,7 +98,7 @@ class SceneNarrator:
             # inputs_pt = self.blip_processor(image, text=p, return_tensors="pt").to(self.device)
             # input_ids_pt = inputs_pt["input_ids"]
             # attention_mask_pt = inputs_pt["attention_mask"]
-            
+
             # tokens = self.blip_processor.tokenizer(p, return_tensors="np").to(self.device)
             # input_ids_np = tokens["input_ids"]
             # attention_mask_np = tokens["attention_mask"]
