@@ -10,7 +10,7 @@ from PIL import Image
 from transformers import BlipProcessor, BlipForConditionalGeneration, CLIPProcessor, CLIPModel, CLIPVisionModel, CLIPTextModel, CLIPConfig, BlipImageProcessorFast, BertTokenizerFast
 from .scene_classification import SceneClassifier
 from .utils.blip_tokenizer import BlipTokenizer
-from .utils.blip_exporter import blip_export_tokenizer
+from .utils.blip_exporter import blip_export_tokenizer, blip_export_models
 from .utils.clip_tokenizer import ClipTokenizer
 from .utils.clip_exporter import clip_export_tokenizer, clip_export_projections, clip_load_projections, clip_export_models
 
@@ -27,6 +27,8 @@ class SceneNarrator:
         
         self.blip_model = BlipForConditionalGeneration.from_pretrained("Salesforce/blip-image-captioning-base", cache_dir="weights/blip", local_files_only=True).to(self.device)
         self.blip_model.eval()
+
+        # blip_export_models()
 
         # clip_export_tokenizer()
         self.clip_tokenizer = ClipTokenizer("weights/clip_tokenizer/tokenizer.json")
@@ -89,9 +91,9 @@ class SceneNarrator:
             early_stopping=True
         )
 
-        print(self.blip_processor.tokenizer.model_max_length)
-        print(self.blip_processor.tokenizer.padding_side)
-        print(self.blip_processor.tokenizer.model_input_names)
+        # print(self.blip_processor.tokenizer.model_max_length)
+        # print(self.blip_processor.tokenizer.padding_side)
+        # print(self.blip_processor.tokenizer.model_input_names)
         all_captions: list[str] = []
         image_np = torch.tensor(self.__blip_preprocess_image_np(image), dtype=torch.float32, device=self.device)
         for p in prompts:
