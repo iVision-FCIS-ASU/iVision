@@ -102,20 +102,8 @@ class SceneNarrator:
         print(f"4. CLIPScore         : {clip_score:.4f}")
         print(f"Total Inference Time : {(scene_time + blip_time + clip_time):.3f}s")
         print(f"{'='*30}\n")
-
-    def __clip_preprocess_image(self, image: Image.Image) -> npt.NDArray:
-        transform = transforms.Compose([
-            transforms.Resize(224, interpolation=transforms.InterpolationMode.BICUBIC),
-            transforms.CenterCrop(224),
-            transforms.ToTensor(),
-            transforms.Normalize(
-                mean=[0.48145466, 0.4578275, 0.40821073],
-                std=[0.26862954, 0.26130258, 0.27577711],
-            ),
-        ])
-        return transform(image).detach().cpu().numpy()
     
-    def __clip_preprocess_image_np(self, image: Image.Image) -> npt.NDArray:
+    def __clip_preprocess_image(self, image: Image.Image) -> npt.NDArray:
         width, height = image.size
         scale = 224 / min(width, height)
         new_w, new_h = int(width * scale), int(height * scale)
@@ -135,46 +123,15 @@ class SceneNarrator:
 
         return img
 
-    
-    def __linear(self, x, weight, bias):
-        out = x @ weight.T
-        if bias is not None:
-            out += bias
-        return out
-
-    def __linear_np(self, x: npt.NDArray, weight: npt.NDArray, bias: npt.NDArray) -> npt.NDArray:
+    def __linear(self, x: npt.NDArray, weight: npt.NDArray, bias: npt.NDArray) -> npt.NDArray:
         out = x @ weight
         if bias is not None:
             out = out + bias
         return out
-
-    def __clip_get_best_caption_torch(self, raw_img: Image, captions: list[str]) -> tuple[str, float]:
-        image_tensor = self.__clip_preprocess_image(raw_img)
-        image_batch = torch.stack([image_tensor] * len(captions)).to(self.device)
-
-        input_ids, attention_mask = self.clip_tokenizer.encode(captions)
-
-        vision_outputs = self.clip_vision_model(pixel_values=image_batch)
-        text_outputs = self.clip_text_model(input_ids=input_ids, attention_mask=attention_mask)
-        
-        image_embeds = vision_outputs.pooler_output
-        text_embeds = text_outputs.pooler_output
-        image_embeds = self.__linear(image_embeds, self.vision_proj_weight, self.vision_proj_bias)
-        text_embeds  = self.__linear(text_embeds, self.text_proj_weight, self.text_proj_bias)
-        
-        img_emb = image_embeds / image_embeds.norm(dim=-1, keepdim=True)
-        txt_emb = text_embeds / text_embeds.norm(dim=-1, keepdim=True)
-
-        scores = (img_emb * txt_emb).sum(dim=1).detach().cpu().numpy()
-        best_idx = np.argmax(scores)
-        best_score = float(scores[best_idx])
-        best_caption = self.__post_process(captions[best_idx])
-
-        return best_caption, best_score
     
     @line_profiler.profile
     def __clip_get_best_caption(self, raw_img: Image, captions: list[str]) -> tuple[str, float]:
-        image_np = self.__clip_preprocess_image_np(raw_img)
+        image_np = self.__clip_preprocess_image(raw_img)
         image_batch = np.repeat(image_np[None, ...], len(captions), axis=0)
 
         input_ids, attention_mask = self.clip_tokenizer.encode(captions)
@@ -194,17 +151,8 @@ class SceneNarrator:
 
         image_embeds = vision_outputs
         text_embeds  = text_outputs
-
-        # image_embeds = image_embeds @ self.vision_proj_weight
-        # if self.vision_proj_bias is not None:
-        #     image_embeds += self.vision_proj_bias
-
-        # text_embeds = text_embeds @ self.text_proj_weight
-        # if self.text_proj_bias is not None:
-        #     text_embeds += self.text_proj_bias
-
-        image_embeds = self.__linear_np(image_embeds, self.vision_proj_weight, self.vision_proj_bias)
-        text_embeds = self.__linear_np(text_embeds, self.text_proj_weight, self.text_proj_bias)
+        image_embeds = self.__linear(image_embeds, self.vision_proj_weight, self.vision_proj_bias)
+        text_embeds = self.__linear(text_embeds, self.text_proj_weight, self.text_proj_bias)
         
         img_emb = image_embeds / np.linalg.norm(image_embeds, axis=-1, keepdims=True)
         txt_emb = text_embeds / np.linalg.norm(text_embeds, axis=-1, keepdims=True)
