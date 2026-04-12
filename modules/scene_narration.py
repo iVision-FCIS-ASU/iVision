@@ -29,9 +29,11 @@ class SceneNarrator:
         # clip_export_projections()
         self.vision_proj_weight, self.vision_proj_bias, \
         self.text_proj_weight, self.text_proj_bias = clip_load_projections(
-            "weights/clip_projection/clip_projections.json",
-            device=self.device
+            "weights/clip_projection/clip_projections.json"
         )
+
+        self.vision_proj_weight = self.vision_proj_weight.T
+        self.text_proj_weight = self.text_proj_weight.T
 
         # self.clip_vision_model = CLIPVisionModel.from_pretrained("openai/clip-vit-base-patch16", cache_dir="weights/blip", local_files_only=True).to(self.device)
         # self.clip_text_model = CLIPTextModel.from_pretrained("openai/clip-vit-base-patch16", cache_dir="weights/blip", local_files_only=True).to(self.device)
@@ -101,20 +103,47 @@ class SceneNarrator:
         print(f"Total Inference Time : {(scene_time + blip_time + clip_time):.3f}s")
         print(f"{'='*30}\n")
 
-    def __clip_preprocess_image(self, image: Image.Image) -> torch.Tensor:
+    def __clip_preprocess_image(self, image: Image.Image) -> npt.NDArray:
         transform = transforms.Compose([
             transforms.Resize(224, interpolation=transforms.InterpolationMode.BICUBIC),
             transforms.CenterCrop(224),
-            transforms.ToTensor(),  # converts to [0,1] and CHW
+            transforms.ToTensor(),
             transforms.Normalize(
                 mean=[0.48145466, 0.4578275, 0.40821073],
                 std=[0.26862954, 0.26130258, 0.27577711],
             ),
         ])
-        return transform(image)
+        return transform(image).detach().cpu().numpy()
+    
+    def __clip_preprocess_image_np(self, image: Image.Image) -> npt.NDArray:
+        width, height = image.size
+        scale = 224 / min(width, height)
+        new_w, new_h = int(width * scale), int(height * scale)
+        image = image.resize((new_w, new_h), Image.BICUBIC)
+
+        left = (new_w - 224) // 2
+        top = (new_h - 224) // 2
+        image = image.crop((left, top, left + 224, top + 224))
+
+        img = np.array(image).astype(np.float32) / 255.0
+
+        img = np.transpose(img, (2, 0, 1))
+
+        mean = np.array([0.48145466, 0.4578275, 0.40821073], dtype=np.float32)[:, None, None]
+        std  = np.array([0.26862954, 0.26130258, 0.27577711], dtype=np.float32)[:, None, None]
+        img = (img - mean) / std
+
+        return img
+
     
     def __linear(self, x, weight, bias):
         out = x @ weight.T
+        if bias is not None:
+            out += bias
+        return out
+
+    def __linear_np(self, x: npt.NDArray, weight: npt.NDArray, bias: npt.NDArray) -> npt.NDArray:
+        out = x @ weight
         if bias is not None:
             out = out + bias
         return out
@@ -143,35 +172,44 @@ class SceneNarrator:
 
         return best_caption, best_score
     
+    @line_profiler.profile
     def __clip_get_best_caption(self, raw_img: Image, captions: list[str]) -> tuple[str, float]:
-        image_tensor = self.__clip_preprocess_image(raw_img)
-        image_batch = torch.stack([image_tensor] * len(captions)).to(self.device)
+        image_np = self.__clip_preprocess_image_np(raw_img)
+        image_batch = np.repeat(image_np[None, ...], len(captions), axis=0)
 
         input_ids, attention_mask = self.clip_tokenizer.encode(captions)
 
         vision_outputs = self.clip_onnx_vision.run(
             None,
-            {"pixel_values": image_batch.cpu().numpy()}
+            {"pixel_values": image_batch}
         )[0]
 
         text_outputs = self.clip_onnx_text.run(
             None,
             {
-                "input_ids": input_ids.cpu().numpy(),
-                "attention_mask": attention_mask.cpu().numpy()
+                "input_ids": input_ids,
+                "attention_mask": attention_mask
             }
         )[0]
 
-        image_embeds = torch.tensor(vision_outputs, device=self.device)
-        text_embeds  = torch.tensor(text_outputs, device=self.device)
+        image_embeds = vision_outputs
+        text_embeds  = text_outputs
 
-        image_embeds = self.__linear(image_embeds, self.vision_proj_weight, self.vision_proj_bias)
-        text_embeds  = self.__linear(text_embeds, self.text_proj_weight, self.text_proj_bias)
+        # image_embeds = image_embeds @ self.vision_proj_weight
+        # if self.vision_proj_bias is not None:
+        #     image_embeds += self.vision_proj_bias
+
+        # text_embeds = text_embeds @ self.text_proj_weight
+        # if self.text_proj_bias is not None:
+        #     text_embeds += self.text_proj_bias
+
+        image_embeds = self.__linear_np(image_embeds, self.vision_proj_weight, self.vision_proj_bias)
+        text_embeds = self.__linear_np(text_embeds, self.text_proj_weight, self.text_proj_bias)
         
-        img_emb = image_embeds / image_embeds.norm(dim=-1, keepdim=True)
-        txt_emb = text_embeds / text_embeds.norm(dim=-1, keepdim=True)
+        img_emb = image_embeds / np.linalg.norm(image_embeds, axis=-1, keepdims=True)
+        txt_emb = text_embeds / np.linalg.norm(text_embeds, axis=-1, keepdims=True)
         
-        scores = (img_emb * txt_emb).sum(dim=1).detach().cpu().numpy()
+        scores = np.sum(img_emb * txt_emb, axis=1)
         best_idx = np.argmax(scores)
         best_score = float(scores[best_idx])
         best_caption = self.__post_process(captions[best_idx])

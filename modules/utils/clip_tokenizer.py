@@ -1,4 +1,4 @@
-import torch
+import numpy as np
 from tokenizers import Tokenizer
 
 class ClipTokenizer:
@@ -40,6 +40,6 @@ class ClipTokenizer:
             attention_masks.append(attn_mask)
 
         return (
-            torch.tensor(input_ids, dtype=torch.long),
-            torch.tensor(attention_masks, dtype=torch.long),
+            np.array(input_ids, dtype=np.int64),
+            np.array(attention_masks, dtype=np.int64)
         )

@@ -1,5 +1,6 @@
 import json
 import numpy as np
+import numpy.typing as npt
 import onnxruntime as ort
 import torch
 from transformers import CLIPProcessor, CLIPModel, CLIPVisionModel, CLIPTextModel
@@ -9,14 +10,20 @@ clip_model_name = "openai/clip-vit-base-patch16"
 cache_dir = "weights/blip"
 
 
-def tensor_to_list(t):
+def tensor_to_list(t: torch.Tensor) -> list:
     return t.detach().cpu().numpy().tolist()
 
-def list_to_tensor(x, device):
-    return torch.tensor(x).to(device) if x is not None else None
+def list_to_numpy(x: list | None) -> npt.NDArray | None:
+    return np.array(x) if x is not None else None
 
 
-def clip_save_projections(path, vision_w, vision_b, text_w, text_b):
+def clip_save_projections(
+        path: str, 
+        vision_w: torch.Tensor, 
+        vision_b: torch.Tensor, 
+        text_w: torch.Tensor, 
+        text_b: torch.Tensor
+    ) -> None:
     data = {
         "vision_proj_weight": tensor_to_list(vision_w),
         "vision_proj_bias": tensor_to_list(vision_b) if vision_b is not None else None,
@@ -27,15 +34,17 @@ def clip_save_projections(path, vision_w, vision_b, text_w, text_b):
     with open(path, "w") as f:
         json.dump(data, f)
 
-def clip_load_projections(path, device="cpu"):
+def clip_load_projections(
+        path: str
+    ) -> tuple[npt.NDArray | None, npt.NDArray | None, npt.NDArray | None, npt.NDArray | None]:
     with open(path, "r") as f:
         data = json.load(f)
 
-    vision_w = list_to_tensor(data["vision_proj_weight"], device)
-    vision_b = list_to_tensor(data["vision_proj_bias"], device)
+    vision_w = list_to_numpy(data["vision_proj_weight"])
+    vision_b = list_to_numpy(data["vision_proj_bias"])
 
-    text_w = list_to_tensor(data["text_proj_weight"], device)
-    text_b = list_to_tensor(data["text_proj_bias"], device)
+    text_w = list_to_numpy(data["text_proj_weight"])
+    text_b = list_to_numpy(data["text_proj_bias"])
 
     return vision_w, vision_b, text_w, text_b
 
