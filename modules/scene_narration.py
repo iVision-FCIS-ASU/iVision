@@ -7,7 +7,7 @@ import time
 import torch
 import torchvision.transforms as transforms
 from PIL import Image
-from transformers import BlipProcessor, BlipForConditionalGeneration, CLIPProcessor, CLIPModel, CLIPVisionModel, CLIPTextModel, CLIPConfig
+from transformers import BlipProcessor, BlipForConditionalGeneration, CLIPProcessor, CLIPModel, CLIPVisionModel, CLIPTextModel, CLIPConfig, BlipImageProcessorFast
 from .scene_classification import SceneClassifier
 from .utils.clip_tokenizer import ClipTokenizer
 from .utils.clip_exporter import clip_export_tokenizer, clip_export_projections, clip_load_projections, clip_export_models
@@ -51,7 +51,21 @@ class SceneNarrator:
         raw_img = Image.fromarray(raw_img)
         return raw_img
 
+    def __blip_preprocess_image_np(self, image: Image.Image) -> npt.NDArray:
+        image = image.resize((384, 384), Image.Resampling.BICUBIC)
+
+        img = np.array(image, dtype=np.float32) / 255.0
+        img = np.transpose(img, (2, 0, 1))
+
+        mean = np.array([0.48145466, 0.4578275, 0.40821073], dtype=np.float32)[:, None, None]
+        std  = np.array([0.26862954, 0.26130258, 0.27577711], dtype=np.float32)[:, None, None]
+
+        img = (img - mean) / std
+
+        return img[None, ...]
+
     @torch.inference_mode()
+    @line_profiler.profile
     def __generate_captions(self, image: Image, scene_label: str) -> list[str]:
         clean_label = scene_label.replace('_', ' ')
         prompts = [
@@ -71,8 +85,26 @@ class SceneNarrator:
         )
 
         all_captions: list[str] = []
+        image_np = torch.tensor(self.__blip_preprocess_image_np(image), dtype=torch.float32, device=self.device)
         for p in prompts:
             inputs = self.blip_processor(image, text=p, return_tensors="pt").to(self.device)
+            # image_np = self.__blip_preprocess_image_np(image)
+            # image_torch = inputs["pixel_values"]
+            # image_torch_np = inputs["pixel_values"].cpu().numpy()
+            # print(f"Preprocessed image close: {np.allclose(image_np, image_torch_np, atol=1e-2)}")
+            # diff: npt.NDArray = np.abs(image_np - image_torch_np)
+            # print(f"Diff max: {diff.max()}, mean: {diff.mean()}")
+            # print("p99:", np.percentile(diff, 99))
+            # print("p999:", np.percentile(diff, 99.9))
+            # print(f"image_numpy ({image_np.dtype}, {image_np.shape}): {image_np}")
+            # print(f"image_torch ({image_torch.dtype}, {image_torch.shape}): {image_torch}")
+            inputs["pixel_values"] = image_np
+            print(f"Prompt: {p}")
+            print(f"Input Shapes:")
+            for k, v in inputs.items():
+                print(f"{k} ({v.dtype}): {v.shape}")
+            # print(f"Inputs:{inputs}\n")            
+            
             # Generate 2 options per prompt for CLIP to evaluate
             outputs = self.blip_model.generate(**inputs, **gen_params, num_return_sequences=2)
             all_captions += [self.blip_processor.decode(o, skip_special_tokens=True) for o in outputs]
