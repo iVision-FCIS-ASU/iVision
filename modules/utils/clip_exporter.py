@@ -9,6 +9,10 @@ from transformers import CLIPProcessor, CLIPModel, CLIPVisionModel, CLIPTextMode
 clip_model_name = "openai/clip-vit-base-patch16"
 cache_dir = "weights/blip"
 
+def clip_export_tokenizer():
+    clip_processor = CLIPProcessor.from_pretrained(clip_model_name, cache_dir=cache_dir, use_fast=True, local_files_only=True)
+    clip_processor.tokenizer.save_pretrained("weights/clip_tokenizer")
+
 
 def tensor_to_list(t: torch.Tensor) -> list:
     return t.detach().cpu().numpy().tolist()
@@ -34,6 +38,16 @@ def clip_save_projections(
     with open(path, "w") as f:
         json.dump(data, f)
 
+def clip_export_projections():
+    clip_model = CLIPModel.from_pretrained(clip_model_name, cache_dir=cache_dir, local_files_only=True)
+    clip_save_projections(
+        "weights/clip_projection/clip_projections.json",
+        clip_model.visual_projection.weight,
+        clip_model.visual_projection.bias,
+        clip_model.text_projection.weight,
+        clip_model.text_projection.bias
+    )
+
 def clip_load_projections(
         path: str
     ) -> tuple[npt.NDArray | None, npt.NDArray | None, npt.NDArray | None, npt.NDArray | None]:
@@ -47,21 +61,6 @@ def clip_load_projections(
     text_b = list_to_numpy(data["text_proj_bias"])
 
     return vision_w, vision_b, text_w, text_b
-
-
-def clip_export_tokenizer():
-    clip_processor = CLIPProcessor.from_pretrained(clip_model_name, cache_dir=cache_dir, use_fast=True, local_files_only=True)
-    clip_processor.tokenizer.save_pretrained("weights/clip_tokenizer")
-
-def clip_export_projections():
-    clip_model = CLIPModel.from_pretrained(clip_model_name, cache_dir=cache_dir, local_files_only=True)
-    clip_save_projections(
-        "weights/clip_projection/clip_projections.json",
-        clip_model.visual_projection.weight,
-        clip_model.visual_projection.bias,
-        clip_model.text_projection.weight,
-        clip_model.text_projection.bias
-    )
 
 
 def clip_export_vision_model():
