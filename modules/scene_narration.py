@@ -7,8 +7,9 @@ import time
 import torch
 import torchvision.transforms as transforms
 from PIL import Image
-from transformers import BlipProcessor, BlipForConditionalGeneration, CLIPProcessor, CLIPModel, CLIPVisionModel, CLIPTextModel, CLIPConfig, BlipImageProcessorFast
+from transformers import BlipProcessor, BlipForConditionalGeneration, CLIPProcessor, CLIPModel, CLIPVisionModel, CLIPTextModel, CLIPConfig, BlipImageProcessorFast, BertTokenizerFast
 from .scene_classification import SceneClassifier
+from .utils.blip_tokenizer import BlipTokenizer
 from .utils.clip_tokenizer import ClipTokenizer
 from .utils.clip_exporter import clip_export_tokenizer, clip_export_projections, clip_load_projections, clip_export_models
 
@@ -20,6 +21,9 @@ class SceneNarrator:
         
         self.blip_processor = BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-base", cache_dir="weights/blip", use_fast=True, local_files_only=True)
         # self.blip_processor.tokenizer.padding_side = "left"
+        # self.blip_processor.tokenizer.save_pretrained("weights/blip_tokenizer")
+        self.blip_tokenizer = BlipTokenizer("weights/blip_tokenizer/tokenizer.json")
+        
         self.blip_model = BlipForConditionalGeneration.from_pretrained("Salesforce/blip-image-captioning-base", cache_dir="weights/blip", local_files_only=True).to(self.device)
         self.blip_model.eval()
 
@@ -84,21 +88,40 @@ class SceneNarrator:
             early_stopping=True
         )
 
+        print(self.blip_processor.tokenizer.model_max_length)
+        print(self.blip_processor.tokenizer.padding_side)
+        print(self.blip_processor.tokenizer.model_input_names)
         all_captions: list[str] = []
         image_np = torch.tensor(self.__blip_preprocess_image_np(image), dtype=torch.float32, device=self.device)
         for p in prompts:
-            inputs = self.blip_processor(image, text=p, return_tensors="pt").to(self.device)
-            # image_np = self.__blip_preprocess_image_np(image)
-            # image_torch = inputs["pixel_values"]
-            # image_torch_np = inputs["pixel_values"].cpu().numpy()
-            # print(f"Preprocessed image close: {np.allclose(image_np, image_torch_np, atol=1e-2)}")
-            # diff: npt.NDArray = np.abs(image_np - image_torch_np)
-            # print(f"Diff max: {diff.max()}, mean: {diff.mean()}")
-            # print("p99:", np.percentile(diff, 99))
-            # print("p999:", np.percentile(diff, 99.9))
-            # print(f"image_numpy ({image_np.dtype}, {image_np.shape}): {image_np}")
-            # print(f"image_torch ({image_torch.dtype}, {image_torch.shape}): {image_torch}")
-            inputs["pixel_values"] = image_np
+            # inputs_pt = self.blip_processor(image, text=p, return_tensors="pt").to(self.device)
+            # input_ids_pt = inputs_pt["input_ids"]
+            # attention_mask_pt = inputs_pt["attention_mask"]
+            
+            # tokens = self.blip_processor.tokenizer(p, return_tensors="np").to(self.device)
+            # input_ids_np = tokens["input_ids"]
+            # attention_mask_np = tokens["attention_mask"]
+            
+            # print(f"Input ids equal: {np.array_equal(input_ids_np, input_ids_pt.cpu().numpy())}")
+            # print(f"Attention mask equal: {np.array_equal(attention_mask_np, attention_mask_pt.cpu().numpy())}")
+
+            input_ids, attention_mask = self.blip_tokenizer.encode(p)
+            
+            # print(f"Input ids equal: {np.array_equal(input_ids_np, input_ids)}")
+            # print(f"Attention mask equal: {np.array_equal(attention_mask_np, attention_mask)}")
+            
+            # print(f"Built-in input_ids ({input_ids_np.dtype, input_ids_np.shape}): {input_ids_np}")
+            # print(f"Our input_ids ({input_ids.dtype, input_ids.shape}): {input_ids}")
+            
+            # print(f"Built-in attention_mask ({attention_mask_np.dtype, attention_mask_np.shape}): {attention_mask_np}")
+            # print(f"Our attention_mask ({attention_mask.dtype, attention_mask.shape}): {attention_mask}")
+
+            inputs = {
+                "pixel_values": image_np,
+                "input_ids": torch.tensor(input_ids, dtype=torch.int64, device=self.device),
+                "attention_mask": torch.tensor(attention_mask, dtype=torch.int64, device=self.device)
+            }
+            
             print(f"Prompt: {p}")
             print(f"Input Shapes:")
             for k, v in inputs.items():
