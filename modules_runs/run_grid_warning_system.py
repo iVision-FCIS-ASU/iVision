@@ -17,6 +17,12 @@ def run_grid_warning_system():
     yolo_model = ObjectDetectorTFLite()
     depth_model = DepthEstimator()
 
+    yolo_model_type = ObjectDetectorTFLite.ModelType.YOLO_SEGMENT
+    yolo_model_types = {
+        "1": ObjectDetectorTFLite.ModelType.YOLO_DETECT,
+        "2": ObjectDetectorTFLite.ModelType.YOLO_SEGMENT,
+    }
+
     cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
     w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
@@ -39,12 +45,12 @@ def run_grid_warning_system():
         warning_image = frame.copy()
         output_image = cv2.cvtColor(depth_bw, cv2.COLOR_GRAY2BGR)
         
-        _, masks, _ = yolo_model.get_objects(frame, ObjectDetectorTFLite.ModelType.YOLO_SEGMENT)
+        boxes, masks, _ = yolo_model.get_objects(frame, yolo_model_type)
         # yolo_centroids = yolo_model.get_warning_centroids(depth_bw, depth_warning_threshold)
         yolo_centroids = yolo_model.draw_objects_with_depth(output_image, depth_bw, draw_masks=True, 
                                                          depth_warning_threshold=depth_warning_threshold)
 
-        grid_obstacle_detector.draw_grid(output_image, depth_bw, masks, 
+        grid_obstacle_detector.draw_grid(output_image, depth_bw, boxes, masks, 
                                          depth_warning_threshold, draw_gridlines=True)
         depth_centroids = grid_obstacle_detector.get_obstacle_centroids()
 
@@ -65,10 +71,12 @@ def run_grid_warning_system():
         pressed_key = cv2.waitKey(1)
         if pressed_key == ord("q") or pressed_key == ord("Q"):
             break
-        if pressed_key == ord("w") or pressed_key == ord("W"):
+        elif pressed_key == ord("w") or pressed_key == ord("W"):
             depth_warning_threshold = min(255, depth_warning_threshold + 5)
-        if pressed_key == ord("s") or pressed_key == ord("S"):
+        elif pressed_key == ord("s") or pressed_key == ord("S"):
             depth_warning_threshold = max(0, depth_warning_threshold - 5)
+        elif pressed_key != -1 and chr(pressed_key) in yolo_model_types:
+            yolo_model_type = yolo_model_types[chr(pressed_key)]
 
     cap.release()
     cv2.destroyAllWindows()

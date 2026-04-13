@@ -9,7 +9,7 @@ from enum import Enum
 from scipy import ndimage
 from ultralytics import YOLO
 from ultralytics.utils.ops import scale_masks
-from .utils.depth_estimation_helpers import get_mean_depth_box, get_mean_depth_mask
+from .utils.depth_estimation_helpers import get_object_depth_box, get_object_depth_mask
 
 class ObjectDetector:
     class ModelType(Enum):
@@ -126,11 +126,11 @@ class ObjectDetector:
         if self.model_type == self.ModelType.YOLO_DETECT or len(self.masks) == 0:
             for box, (centroid, cls_str) in zip(self.boxes, self.centroids):
                 x1, y1, x2, y2, _, conf = box
-                mean_depth, min_depth, max_depth = get_mean_depth_box(depth_bw, box)
-                if mean_depth >= depth_warning_threshold:
+                object_depth, min_depth, max_depth = get_object_depth_box(depth_bw, box)
+                if object_depth >= depth_warning_threshold:
                     warning_centroids.append((centroid, cls_str))
 
-                label = f"{cls_str}:({conf:0.2f}) depth:({mean_depth}, {min_depth}, {max_depth})"
+                label = f"{cls_str}:({conf:0.2f}) depth:({object_depth}, {min_depth}, {max_depth})"
                 cv2.circle(output_image, centroid, radius=self.overlay_centroid_radius, color=self.overlay_color, thickness=-1)
                 cv2.rectangle(output_image, (x1, y1), (x2, y2), self.overlay_color, self.overlay_thickness)
                 cv2.putText(output_image, label, (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 
@@ -138,13 +138,13 @@ class ObjectDetector:
         else:
             for box, mask, (centroid, cls_str) in zip(self.boxes, self.masks, self.centroids):
                 x1, y1, x2, y2, _, conf = box
-                mean_depth, min_depth, max_depth = get_mean_depth_mask(depth_bw, mask)
-                if mean_depth >= depth_warning_threshold:
+                object_depth, min_depth, max_depth = get_object_depth_mask(depth_bw, mask)
+                if object_depth >= depth_warning_threshold:
                     warning_centroids.append((centroid, cls_str))
                 if draw_masks:
                     output_image[mask] = self.overlay_mask_inverse_ratio * output_image[mask] + self.overlay_mask_color 
                 
-                label = f"{cls_str}:({conf:0.2f}) depth:({mean_depth}, {min_depth}, {max_depth})"
+                label = f"{cls_str}:({conf:0.2f}) depth:({object_depth}, {min_depth}, {max_depth})"
                 cv2.circle(output_image, centroid, radius=self.overlay_centroid_radius, color=self.overlay_color, thickness=-1)
                 cv2.rectangle(output_image, (x1, y1), (x2, y2), self.overlay_color, self.overlay_thickness)
                 cv2.putText(output_image, label, (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 

@@ -130,7 +130,7 @@ class iVision:
         yolo_depth_image = output_image.copy()
         
         self.grid_obstacle_detector.draw_grid(
-            output_image, depth_bw, masks, self.depth_warning_threshold, True
+            output_image, depth_bw, boxes, masks, self.depth_warning_threshold, True
         )
         depth_centroids = self.grid_obstacle_detector.get_obstacle_centroids()
         grid_depth_image = output_image.copy()
@@ -289,7 +289,7 @@ class iVision:
 
 if __name__ == "__main__":
     iVision(
-        model_yolo_type=(ObjectDetectorTFLite.ModelType.YOLO_SEGMENT, ObjectDetectorTFLite.ModelType.YOLO_SEGMENT),
+        model_yolo_type=(ObjectDetectorTFLite.ModelType.YOLO_DETECT, ObjectDetectorTFLite.ModelType.YOLO_DETECT),
         model_depth_type=(DepthEstimator.ModelType.MIDAS_V21, DepthEstimator.ModelType.DEPTH_ANYTHING_V2),
         depth_warning_threshold=180,
         side_by_side=True,

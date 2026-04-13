@@ -156,6 +156,7 @@ class GridObstacleDetector:
         self, 
         output_img: npt.NDArray, 
         depth_bw: npt.NDArray,
+        boxes: list[int, int, int, int, int, float],
         masks: list[npt.NDArray] = [],
         depth_warning_threshold: int = 150,
         draw_gridlines = False
@@ -164,8 +165,13 @@ class GridObstacleDetector:
         self.depth_mean_threshold = depth_warning_threshold / 255
         
         depth_bw_without_objects = depth_bw.copy()
-        for mask in masks:
-            depth_bw_without_objects[mask] = 0
+        if len(masks) != 0:
+            for mask in masks:
+                depth_bw_without_objects[mask] = 0
+        else:
+            for box in boxes:
+                x1, y1, x2, y2, _, _ = box
+                depth_bw_without_objects[y1:y2, x1:x2] = 0
 
         self.__draw_overlays(depth_bw_without_objects, output_img)
         if draw_gridlines:
