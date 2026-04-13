@@ -10,7 +10,8 @@ from PIL import Image
 from transformers import BlipProcessor, BlipForConditionalGeneration, CLIPProcessor, CLIPModel, CLIPVisionModel, CLIPTextModel, CLIPConfig, BlipImageProcessorFast, BertTokenizerFast
 from .scene_classification import SceneClassifier
 from .utils.blip_tokenizer import BlipTokenizer
-from .utils.blip_exporter import blip_export_tokenizer, blip_export_models
+from .utils.blip_exporter import blip_export_tokenizer, blip_export_models, blip_compare_vision_models
+from .utils.blip_helpers import beam_search_onnx
 from .utils.clip_tokenizer import ClipTokenizer
 from .utils.clip_exporter import clip_export_tokenizer, clip_export_projections, clip_load_projections, clip_export_models
 
@@ -29,6 +30,8 @@ class SceneNarrator:
         self.blip_model.eval()
 
         # blip_export_models()
+        # self.blip_onnx_vision = ort.InferenceSession("weights/blip_model/blip_vision.onnx")
+        # self.blip_onnx_text = ort.InferenceSession("weights/blip_model/blip_text.onnx")
 
         # clip_export_tokenizer()
         self.clip_tokenizer = ClipTokenizer("weights/clip_tokenizer/tokenizer.json")
@@ -91,34 +94,19 @@ class SceneNarrator:
             early_stopping=True
         )
 
-        # print(self.blip_processor.tokenizer.model_max_length)
-        # print(self.blip_processor.tokenizer.padding_side)
-        # print(self.blip_processor.tokenizer.model_input_names)
         all_captions: list[str] = []
+        # onnx_captions: list[str] = []
+
         image_np = torch.tensor(self.__blip_preprocess_image_np(image), dtype=torch.float32, device=self.device)
+        # blip_compare_vision_models(image_np)
+        # image_numpy = self.__blip_preprocess_image_np(image)
+        # encoder_hidden_states = self.blip_onnx_vision.run(
+        #     None, 
+        #     {"pixel_values": image_numpy}
+        # )[0]
+
         for p in prompts:
-            # inputs_pt = self.blip_processor(image, text=p, return_tensors="pt").to(self.device)
-            # input_ids_pt = inputs_pt["input_ids"]
-            # attention_mask_pt = inputs_pt["attention_mask"]
-
-            # tokens = self.blip_processor.tokenizer(p, return_tensors="np").to(self.device)
-            # input_ids_np = tokens["input_ids"]
-            # attention_mask_np = tokens["attention_mask"]
-            
-            # print(f"Input ids equal: {np.array_equal(input_ids_np, input_ids_pt.cpu().numpy())}")
-            # print(f"Attention mask equal: {np.array_equal(attention_mask_np, attention_mask_pt.cpu().numpy())}")
-
             input_ids, attention_mask = self.blip_tokenizer.encode(p)
-            
-            # print(f"Input ids equal: {np.array_equal(input_ids_np, input_ids)}")
-            # print(f"Attention mask equal: {np.array_equal(attention_mask_np, attention_mask)}")
-            
-            # print(f"Built-in input_ids ({input_ids_np.dtype, input_ids_np.shape}): {input_ids_np}")
-            # print(f"Our input_ids ({input_ids.dtype, input_ids.shape}): {input_ids}")
-            
-            # print(f"Built-in attention_mask ({attention_mask_np.dtype, attention_mask_np.shape}): {attention_mask_np}")
-            # print(f"Our attention_mask ({attention_mask.dtype, attention_mask.shape}): {attention_mask}")
-
             inputs = {
                 "pixel_values": image_np,
                 "input_ids": torch.tensor(input_ids, dtype=torch.int64, device=self.device),
@@ -126,13 +114,34 @@ class SceneNarrator:
             }
             
             print(f"Prompt: {p}")
-            print(f"Input Shapes:")
-            for k, v in inputs.items():
-                print(f"{k} ({v.dtype}): {v.shape}")
-            # print(f"Inputs:{inputs}\n")            
+            # print(f"Input Shapes:")
+            # for k, v in inputs.items():
+            #     print(f"{k} ({v.dtype}): {v.shape}")
+            # print(f"Inputs:{inputs}\n")
+
+            # beams = beam_search_onnx(
+            #     text_decoder_onnx=self.blip_onnx_text,
+            #     encoder_hidden_states=encoder_hidden_states,
+            #     prompt_input_ids=input_ids,
+            #     prompt_attention_mask=attention_mask,
+            #     bos_token_id=self.blip_tokenizer.bos_id,
+            #     eos_token_id=self.blip_tokenizer.eos_id,
+            #     max_length=50,
+            #     min_length=20,
+            #     beam_size=8,
+            #     repetition_penalty=1.2,
+            #     no_repeat_ngram_size=2,
+            #     length_penalty=1.0,
+            #     early_stopping=True,
+            #     num_return_sequences=2,
+            # )
+            # onnx_captions += [self.blip_tokenizer.tokenizer.decode(beam[0]) for beam in beams]
+
+            # print(f"Beams: {beams}")
             
             # Generate 2 options per prompt for CLIP to evaluate
             outputs = self.blip_model.generate(**inputs, **gen_params, num_return_sequences=2)
+            print(f"Torch Outputs: {outputs}")
             all_captions += [self.blip_processor.decode(o, skip_special_tokens=True) for o in outputs]
 
         # # faster alternative but less accurate (requires padding_side="left" in __init__)

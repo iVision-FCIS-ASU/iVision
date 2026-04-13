@@ -7,10 +7,15 @@ class BlipTokenizer:
         self.tokenizer = Tokenizer.from_file(tokenizer_path)
         self.max_length = max_length
 
+        # BOS: 30522
+        # EOS: 102
+        # PAD: 0
         self.pad_id = 0
         self.unk_id = 100
         self.cls_id = 101
         self.sep_id = 102
+        self.eos_id = 102
+        self.bos_id = 30522
 
     def encode(self, text: str) -> tuple[npt.NDArray[np.int64], npt.NDArray[np.int64]]:
         enc = self.tokenizer.encode(text)
