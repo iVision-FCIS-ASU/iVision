@@ -1,4 +1,5 @@
 import cv2
+import keyboard
 import time
 import torch
 import numpy as np
@@ -65,6 +66,7 @@ class iVision:
         self.close_hotkeys = [ ord("q"), ord("Q") ]
         self.caption_hotkeys = [ ord("c"), ord("C") ]
         self.reading_mode_hotkeys = [ ord("r"), ord("R") ]
+        self.ocr_image: npt.NDArray | None = None
 
         self.warnings: list[str] = []
 
@@ -149,8 +151,16 @@ class iVision:
         cv2.putText(frame, label, (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 5)
         cv2.putText(frame, label, (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
         
-        output_image = np.vstack((np.hstack((frame, yolo_image, depth_bw_bgr)), 
-                                  np.hstack((yolo_depth_image, grid_depth_image, warning_image))))
+        # output_image = np.vstack((np.hstack((frame, yolo_image, depth_bw_bgr)), 
+                                #   np.hstack((yolo_depth_image, grid_depth_image, warning_image))))
+        
+        if self.ocr_image is None:
+            output_image = np.vstack((np.hstack((frame, frame)), 
+                                      np.hstack((grid_depth_image, warning_image))))
+        else:
+            output_image = np.vstack((np.hstack((frame, self.ocr_image)), 
+                                      np.hstack((grid_depth_image, warning_image))))
+
 
         return output_image
 
@@ -234,13 +244,13 @@ class iVision:
         print("\n-----STARTING OCR-----")
         texts, scores, boxes = self.reading_mode.get_text(frame)
         print(f"Detected {len(texts)} texts!")
-        # ocr_image = reading_mode.draw_boxes(frame)
+        self.ocr_image = self.reading_mode.draw_boxes(frame)
         
         print("-----PRINTING DETECTED TEXT-----")
         for text, score in zip(texts, scores):
             print(f"Text ({score:0.2f}): \"{text}\"")
         print("--------PRINTING STOPPED--------")
-        
+
         print("-----STOPPING OCR-----\n")
         self.IS_READING_MODE_RUNNING = False
 
@@ -278,8 +288,10 @@ class iVision:
             elif not self.IS_READING_MODE_RUNNING and key_pressed in self.reading_mode_hotkeys:
                 self.IS_READING_MODE_RUNNING = True
                 threading.Thread(target=self.__reading_mode_thread, args=(frame,), daemon=True).start()
+            elif not self.IS_READING_MODE_RUNNING and (keyboard.is_pressed('r') or keyboard.is_pressed('R')):
+                self.IS_READING_MODE_RUNNING = True
+                threading.Thread(target=self.__reading_mode_thread, args=(frame,), daemon=True).start()
             
-
         print("-----Stopping Main Thread-----")
         self.IS_RUNNING = False
         camera_thread.join()
@@ -289,7 +301,7 @@ class iVision:
 
 if __name__ == "__main__":
     iVision(
-        model_yolo_type=(ObjectDetectorTFLite.ModelType.YOLO_DETECT, ObjectDetectorTFLite.ModelType.YOLO_DETECT),
+        model_yolo_type=(ObjectDetectorTFLite.ModelType.YOLO_SEGMENT, ObjectDetectorTFLite.ModelType.YOLO_SEGMENT),
         model_depth_type=(DepthEstimator.ModelType.MIDAS_V21, DepthEstimator.ModelType.DEPTH_ANYTHING_V2),
         depth_warning_threshold=180,
         side_by_side=True,

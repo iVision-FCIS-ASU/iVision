@@ -31,6 +31,7 @@ dependencies:
       - attrs==25.4.0
       - bce-python-sdk==0.9.67
       - certifi==2026.1.4
+      - cffi==2.0.0
       - chardet==7.3.0
       - charset-normalizer==3.4.4
       - click==8.3.1
@@ -71,6 +72,7 @@ dependencies:
       - jsonschema==4.26.0
       - jsonschema-specifications==2025.9.1
       - keras==3.12.0
+      - keyboard==0.13.5
       - kiwisolver==1.4.9
       - libclang==18.1.1
       - line-profiler==5.0.0
@@ -109,6 +111,7 @@ dependencies:
       - protobuf==6.33.4
       - py-cpuinfo==9.0.0
       - pyclipper==1.4.0
+      - pycparser==3.0
       - pycryptodome==3.23.0
       - pydantic==2.12.5
       - pydantic-core==2.41.5
@@ -135,6 +138,8 @@ dependencies:
       - shapely==2.1.2
       - shellingham==1.5.4
       - six==1.17.0
+      - sounddevice==0.5.5
+      - soundfile==0.13.1
       - starlette==0.50.0
       - sympy==1.14.0
       - tensorboard==2.20.0

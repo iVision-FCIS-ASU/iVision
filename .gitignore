@@ -1,2 +1,5 @@
 weights/
 __pycache__/
+temp/
+.vscode/
+map_data/
