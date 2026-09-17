@@ -5,8 +5,9 @@ from numpy import typing as npt
 from scipy.cluster.hierarchy import DisjointSet
 from shapely.geometry import box, Polygon
 from shapely.ops import unary_union
-from modules.object_detection import ObjectDetector
+from modules.object_detection_tflite import ObjectDetectorTFLite
 from modules.depth_estimation import DepthEstimator
+from datetime import datetime
 
 class Grid:
     def __init__(
@@ -155,12 +156,27 @@ class Grid:
         return self.polygon_centroids
 
     def draw_grid(self, output_img: npt.NDArray, depth_bw: npt.NDArray, depth_rgb: npt.NDArray) -> npt.NDArray:
-        self.__draw_overlays(depth_bw, output_img)
-        self.__draw_gridlines(output_img)
-        self.__draw_connected_grids(output_img)
+        image_grid = output_img.copy()
+        image_overlay = output_img.copy()
+        image_connected = output_img.copy()
+        
+        # self.__draw_overlays(depth_bw, output_img)
+        self.__draw_gridlines(image_grid)
+        # self.__draw_connected_grids(output_img)
+        
+        
+        self.__draw_overlays(depth_bw, image_overlay)
+        self.__draw_gridlines(image_overlay)
+        # self.__draw_connected_grids(output_img)
+        
+        self.__draw_overlays(depth_bw, image_connected)
+        self.__draw_gridlines(image_connected)
+        self.__draw_connected_grids(image_connected)
+
+        return image_grid, image_overlay, image_connected
 
 def run_grid_test():
-    yolo_model = ObjectDetector()
+    yolo_model = ObjectDetectorTFLite()
     depth_model = DepthEstimator()
 
     cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
@@ -180,17 +196,24 @@ def run_grid_test():
         yolo_image = frame.copy()
         output_image = cv2.cvtColor(depth_bw, cv2.COLOR_GRAY2BGR)
         
-        boxes, masks, yolo_centroids = yolo_model.get_objects(frame, ObjectDetector.ModelType.YOLO_SEGMENT)
+        boxes, masks, yolo_centroids = yolo_model.get_objects(frame, ObjectDetectorTFLite.ModelType.YOLO_SEGMENT)
         yolo_model.draw_objects(yolo_image)
-        yolo_model.draw_objects_with_depth(output_image, depth_bw, draw_masks=True)
 
+        depth_bw_without_objects = depth_bw.copy()
+        # for mask in masks:
+        #     depth_bw_without_objects[mask] = 0
+        image_grid, image_overlay, image_connected = grid.draw_grid(output_image, depth_bw_without_objects, depth_rgb)
+
+        yolo_model.draw_objects_with_depth(output_image, depth_bw, draw_masks=True)
         depth_bw_without_objects = depth_bw.copy()
         for mask in masks:
             depth_bw_without_objects[mask] = 0
-        grid.draw_grid(output_image, depth_bw_without_objects, depth_rgb)
+        _, _, image_connected_yolo = grid.draw_grid(output_image, depth_bw_without_objects, depth_rgb)
+        output_image = image_connected_yolo
 
-        output_image = np.hstack((yolo_image, output_image))
-        cv2.imshow(f"Grid Test {output_image.shape}", output_image)
+        # output_image = np.hstack((yolo_image, output_image))
+        shown_image = np.hstack((yolo_image, output_image))
+        cv2.imshow(f"Grid Test {shown_image.shape}", shown_image)
 
         depth_centroids = grid.get_obstacle_centroids()
         print(f"\nYOLO centroids (x, y): {yolo_centroids}")
@@ -199,6 +222,12 @@ def run_grid_test():
         pressed_key = cv2.waitKey(1)
         if pressed_key == ord("q") or pressed_key == ord("Q"):
             break
+        if pressed_key == ord("s") or pressed_key == ord("S"):
+            cur_datetime = datetime.now().strftime("%Y-%m-%d--%H-%M-%S")
+            cv2.imwrite(f"temp/{cur_datetime}_1_grid.png", image_grid)
+            cv2.imwrite(f"temp/{cur_datetime}_2_overlay.png", image_overlay)
+            cv2.imwrite(f"temp/{cur_datetime}_3_connected.png", image_connected)
+            cv2.imwrite(f"temp/{cur_datetime}_4_with_yolo.png", image_connected_yolo)
 
     cap.release()
     cv2.destroyAllWindows()

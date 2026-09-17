@@ -1,6 +1,7 @@
 import cv2
 import numpy as np
 import line_profiler
+from datetime import datetime
 
 if __name__ == "__main__":
     import sys
@@ -54,19 +55,21 @@ def run_grid_warning_system():
                                          depth_warning_threshold, draw_gridlines=True)
         depth_centroids = grid_obstacle_detector.get_obstacle_centroids()
 
-        grid_warning_system.draw_grid(warning_image, frame, yolo_centroids, depth_centroids)
-        warnings = grid_warning_system.get_warnings()
+        depth_bw = cv2.cvtColor(depth_bw, cv2.COLOR_GRAY2BGR)
+        grid_warning_system.draw_grid(depth_bw, frame, yolo_centroids, depth_centroids)
+        # warnings = grid_warning_system.get_warnings()
     
-        output_image = np.hstack((warning_image, output_image))
-        label = f"Warning Threshold: {depth_warning_threshold}"
-        cv2.putText(output_image, label, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 5)
-        cv2.putText(output_image, label, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+        # output_image = np.hstack((warning_image, output_image))
+        output_image = depth_bw
+        # label = f"Warning Threshold: {depth_warning_threshold}"
+        # cv2.putText(output_image, label, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 5)
+        # cv2.putText(output_image, label, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
         cv2.imshow(f"Warning Test, Output shape: {output_image.shape}", output_image)
 
-        print(f"\nYOLO centroids (x, y): {yolo_centroids}")
-        print(f"Obstacle centroids (x, y): {depth_centroids}")
-        print(f"Grid Warning Data: {grid_warning_system.grid_warning_data}")
-        print(f"Grid Warnings: {warnings}\n")
+        # print(f"\nYOLO centroids (x, y): {yolo_centroids}")
+        # print(f"Obstacle centroids (x, y): {depth_centroids}")
+        # print(f"Grid Warning Data: {grid_warning_system.grid_warning_data}")
+        # print(f"Grid Warnings: {warnings}\n")
 
         pressed_key = cv2.waitKey(1)
         if pressed_key == ord("q") or pressed_key == ord("Q"):
@@ -77,6 +80,9 @@ def run_grid_warning_system():
             depth_warning_threshold = max(0, depth_warning_threshold - 5)
         elif pressed_key != -1 and chr(pressed_key) in yolo_model_types:
             yolo_model_type = yolo_model_types[chr(pressed_key)]
+        elif pressed_key == ord("t") or pressed_key == ord("T"):
+            cur_datetime = datetime.now().strftime("%Y-%m-%d--%H-%M-%S")
+            cv2.imwrite(f"temp/{cur_datetime}_grid.png", output_image)
 
     cap.release()
     cv2.destroyAllWindows()

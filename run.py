@@ -155,11 +155,16 @@ class iVision:
                                 #   np.hstack((yolo_depth_image, grid_depth_image, warning_image))))
         
         if self.ocr_image is None:
-            output_image = np.vstack((np.hstack((frame, frame)), 
-                                      np.hstack((grid_depth_image, warning_image))))
+            # output_image = np.vstack((np.hstack((frame, frame)), 
+            #                           np.hstack((grid_depth_image, warning_image))))
+            output_image = np.vstack((np.hstack((frame, yolo_image, depth_bw_bgr)), 
+                                      np.hstack((grid_depth_image, warning_image, frame))))
+
         else:
-            output_image = np.vstack((np.hstack((frame, self.ocr_image)), 
-                                      np.hstack((grid_depth_image, warning_image))))
+            # output_image = np.vstack((np.hstack((frame, self.ocr_image)), 
+            #                           np.hstack((grid_depth_image, warning_image))))
+            output_image = np.vstack((np.hstack((frame, yolo_image, depth_bw_bgr)), 
+                                      np.hstack((grid_depth_image, warning_image, self.ocr_image))))
 
 
         return output_image

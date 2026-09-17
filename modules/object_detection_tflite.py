@@ -280,6 +280,26 @@ class ObjectDetectorTFLite:
         
         return self.boxes, self.masks, self.centroids
     
+    def get_object_depths(
+        self,
+        depth_bw: npt.NDArray
+    ) -> list[int]:
+        if self.model_type is None or len(self.boxes) == 0:
+            return []
+
+        depths: list[int] = []
+
+        if self.model_type == self.ModelType.YOLO_DETECT or len(self.masks) == 0:
+            for box in self.boxes:
+                object_depth, _, _ = get_object_depth_box(depth_bw, box)
+                depths.append(object_depth)
+        else:
+            for mask in self.masks:
+                object_depth, _, _ = get_object_depth_mask(depth_bw, mask)
+                depths.append(object_depth)
+        
+        return depths
+
     def get_warning_centroids(
         self,
         depth_bw: npt.NDArray,
