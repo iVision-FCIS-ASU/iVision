@@ -56,8 +56,8 @@ class ComplexityEstimator:
         print("\n-----COMPLEXITY ESTIMATION INITIALIZED-----")
 
     def __preprocess(self, frame: npt.NDArray):
-        img = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        img = cv2.resize(img, (224, 224)).astype(np.float32)
+        img = cv2.resize(frame, (224, 224), interpolation=cv2.INTER_LINEAR)
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB).astype(np.float32)
         img = np.expand_dims(img, axis=0)
         return img
     
