@@ -1,11 +1,26 @@
-1. brainstorm variations and alternatives to grid technique for warning system (also think about obstacle persistence)
-2. merge grid warning system (if it turns out well) to current pipeline
-3. download and test FastVLM locally
-4. test metric depth models (metric DepthAnythingV2, metric VideoDepthAnything)
-5. finetune
-        sliding window parameters
-        indoor complexity estimation (luminance map) parameters further
-        the grid parameters further, and check if there are more (or better) parameters to add
-6. perform some optimizations (find bottlenecks in our code using line_profiler and see if I can optimize/refactor any of them)
-7. find similar (or equivalent) libraries, to the ones used here, for android deployment (kotlin/java)
-8. add optional debug statements (for later, very low priority)
+Features:
+- brainstorm variations and alternatives to grid technique for warning system (also think about obstacle persistence)
+- download and test FastVLM locally (or any other VLM to replace blip/clip scene narration)
+- test metric depth models (metric DepthAnythingV2, metric VideoDepthAnything, new yolo depth)
+- find similar (or equivalent) libraries, to the ones used here, for android deployment (kotlin/java)
+- add optional logging/debug statements (for later, very low priority)
+- instead of only marking grids as obstructed or not, also provide the depth to be able to prioritize objects/grids later on.
+- warning system: implement guidance system.
+
+Optimizations:
+- perform some optimizations (find bottlenecks in our code using line_profiler and see if I can optimize/refactor any of them)
+- add ability to do preprocessing & postprocessing using gpu (instead of cpu only)
+- micro-optimize preprocessing and postprocessing functions in all modules
+- finetune:
+        - sliding window parameters
+        - indoor complexity estimation (luminance map) parameters further
+        - the grid parameters further, and check if there are more (or better) parameters to add
+- simplify grid calculations
+- re-export all models (and try different quantizations) using:
+        - new litert-torch for pytorch models
+        - new updated keras library
+
+Refactoring:
+- separate logic from display/gui (even at the cost of some performance)
+- check codebase for any possible refactoring (if necessary)
+- rename variables to their correct access level (like interpreter to __interpreter)
