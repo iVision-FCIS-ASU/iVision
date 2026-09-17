@@ -30,10 +30,12 @@ def narrate(scene_narrator: SceneNarrator, frame: npt.NDArray, scene_classifier:
     global IS_CAPTION_RUNNING
     IS_CAPTION_RUNNING = False
 
-@line_profiler.profile
+# @line_profiler.profile
 def run_scene_narration(frame: None | npt.NDArray):
     scene_classifier = SceneClassifier()
     scene_narrator = SceneNarrator()
+
+    # return
 
     if frame is not None:
         caption = narrate(scene_narrator, frame, scene_classifier)
@@ -66,6 +68,7 @@ if __name__ == "__main__":
     url = None
     # url = "http://images.cocodataset.org/val2017/000000039769.jpg"
     # url = "https://thumbs.dreamstime.com/b/cute-cat-sleeping-street-car-random-58655731.jpg"
-    frame = get_frame(url)
+    # frame = get_frame(url)
+    frame = cv2.imread("C:/Users/MoDo/Downloads/cat.webp")
 
     run_scene_narration(frame)

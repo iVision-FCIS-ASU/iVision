@@ -3,6 +3,7 @@ import numpy as np
 import numpy.typing as npt
 import onnxruntime as ort
 import torch
+from pathlib import Path
 from transformers import CLIPProcessor, CLIPModel, CLIPVisionModel, CLIPTextModel
 
 
@@ -40,6 +41,7 @@ def clip_save_projections(
 
 def clip_export_projections():
     clip_model = CLIPModel.from_pretrained(clip_model_name, cache_dir=cache_dir, local_files_only=True)
+    Path("weights/clip_projection").mkdir(parents=True, exist_ok=True)
     clip_save_projections(
         "weights/clip_projection/clip_projections.json",
         clip_model.visual_projection.weight,
@@ -158,6 +160,8 @@ def clip_compare_text_models():
 
 @torch.inference_mode()
 def clip_export_models():
+    Path("weights/clip_model").mkdir(parents=True, exist_ok=True)
+
     clip_export_vision_model()
     clip_export_text_model()
 

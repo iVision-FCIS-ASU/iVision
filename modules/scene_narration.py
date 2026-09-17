@@ -24,6 +24,7 @@ class SceneNarrator:
         self.blip_processor = BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-base", cache_dir="weights/blip", use_fast=True, local_files_only=True)
         # self.blip_processor.tokenizer.padding_side = "left"
         # self.blip_processor.tokenizer.save_pretrained("weights/blip_tokenizer")
+        # blip_export_tokenizer()
         self.blip_tokenizer = BlipTokenizer("weights/blip_tokenizer/tokenizer.json")
         
         self.blip_model = BlipForConditionalGeneration.from_pretrained("Salesforce/blip-image-captioning-base", cache_dir="weights/blip", local_files_only=True).to(self.device)
@@ -113,7 +114,7 @@ class SceneNarrator:
                 "attention_mask": torch.tensor(attention_mask, dtype=torch.int64, device=self.device)
             }
             
-            print(f"Prompt: {p}")
+            # print(f"Prompt: {p}")
             # print(f"Input Shapes:")
             # for k, v in inputs.items():
             #     print(f"{k} ({v.dtype}): {v.shape}")
@@ -141,7 +142,7 @@ class SceneNarrator:
             
             # Generate 2 options per prompt for CLIP to evaluate
             outputs = self.blip_model.generate(**inputs, **gen_params, num_return_sequences=2)
-            print(f"Torch Outputs: {outputs}")
+            # print(f"Torch Outputs: {outputs}")
             all_captions += [self.blip_processor.decode(o, skip_special_tokens=True) for o in outputs]
 
         # # faster alternative but less accurate (requires padding_side="left" in __init__)
