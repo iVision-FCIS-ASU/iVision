@@ -21,7 +21,7 @@ def get_simple_narration(
     
     scene_type_binary_map = {"indoor": SceneType.INDOOR, "outdoor": SceneType.OUTDOOR}
     scene_type_binary = scene_type_binary_map[scene_binary]
-    complexity, weather, conf = model_complexity.predict(scene_type_binary, frame)
+    complexity, weather, conf = model_complexity.predict(frame, scene_type_binary)
 
     caption = f"You are {scene_binary} in a {scene_type}. "
     if scene_binary:

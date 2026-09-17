@@ -22,7 +22,7 @@ def run_complexity_estimation():
             print("ERROR: Failed to capture frame!")
             break
         
-        complexity, weather, confidence = model.predict(scene_type, frame)
+        complexity, weather, confidence = model.predict(frame, scene_type)
 
         # frame_lum = cv2.cvtColor(frame, cv2.COLOR_BGR2LAB)[:, :, 0]
         frame_lum = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)

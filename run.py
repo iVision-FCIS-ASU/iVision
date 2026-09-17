@@ -213,7 +213,7 @@ class iVision:
             prev_frame = frame
 
             scene_type = scene_type_map[self.model_scene_classifier.get_scene_type_binary(frame)]
-            complexity, weather, confidence = self.model_complexity_estimator.predict(scene_type, frame)
+            complexity, weather, confidence = self.model_complexity_estimator.predict(frame, scene_type)
 
             weather_window.append(weather)
             max_weather = weather_window.get_max_val()
