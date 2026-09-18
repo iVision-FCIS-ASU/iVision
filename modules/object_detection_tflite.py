@@ -34,15 +34,12 @@ class YOLODetect:
     def __preprocess(
         self,
         frame: npt.NDArray
-    ) -> tuple[npt.NDArray, tuple[int, int], tuple[int, int, int, int]]:
-        image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        image = image.astype(np.float32) 
-        image /= 255.0
-
+    ) -> tuple[npt.NDArray, tuple[int, int], float, tuple[int, int, int, int]]:
         h, w = frame.shape[:2]
         scale = self.__target_size / max(h, w)
-        new_h, new_w = int(h * scale), int(w * scale)
-        image = cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_CUBIC)
+        new_h, new_w = round(h * scale), round(w * scale)
+        img = cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
         pad_h = self.__target_size - new_h
         pad_w = self.__target_size - new_w
@@ -50,11 +47,12 @@ class YOLODetect:
         bottom = pad_h - top
         left = pad_w // 2
         right = pad_w - left
-        image = cv2.copyMakeBorder(image, top, bottom, left, right, cv2.BORDER_CONSTANT, value=0)
+        img = cv2.copyMakeBorder(img, top, bottom, left, right, cv2.BORDER_CONSTANT, value=(114, 114, 114))
 
-        image = np.expand_dims(image, axis=0)
+        img = cv2.multiply(img, 1.0 / 255.0, dtype=cv2.CV_32F)
+        img = np.expand_dims(img, axis=0)
 
-        return image, frame.shape[:2], scale, (top, bottom, left, right)
+        return img, frame.shape[:2], scale, (top, bottom, left, right)
 
     # @line_profiler.profile
     def __postprocess(
@@ -119,15 +117,12 @@ class YOLOSegment:
     def __preprocess(
         self,
         frame: npt.NDArray
-    ) -> tuple[npt.NDArray, tuple[int, int], tuple[int, int, int, int]]:
-        image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        image = image.astype(np.float32) 
-        image /= 255.0
-
+    ) -> tuple[npt.NDArray, tuple[int, int], float, tuple[int, int, int, int]]:
         h, w = frame.shape[:2]
         scale = self.__target_size / max(h, w)
-        new_h, new_w = int(h * scale), int(w * scale)
-        image = cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_CUBIC)
+        new_h, new_w = round(h * scale), round(w * scale)
+        img = cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
         pad_h = self.__target_size - new_h
         pad_w = self.__target_size - new_w
@@ -135,11 +130,12 @@ class YOLOSegment:
         bottom = pad_h - top
         left = pad_w // 2
         right = pad_w - left
-        image = cv2.copyMakeBorder(image, top, bottom, left, right, cv2.BORDER_CONSTANT, value=0)
+        img = cv2.copyMakeBorder(img, top, bottom, left, right, cv2.BORDER_CONSTANT, value=(114, 114, 114))
 
-        image = np.expand_dims(image, axis=0)
+        img = cv2.multiply(img, 1.0 / 255.0, dtype=cv2.CV_32F)
+        img = np.expand_dims(img, axis=0)
 
-        return image, frame.shape[:2], scale, (top, bottom, left, right)
+        return img, frame.shape[:2], scale, (top, bottom, left, right)
 
     # @line_profiler.profile
     def __postprocess(
