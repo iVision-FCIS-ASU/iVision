@@ -10,6 +10,7 @@ from enum import Enum
 from scipy import ndimage
 from typing import Literal, TypeAlias
 from .utils.depth_estimation_helpers import get_object_depth_box, get_object_depth_mask
+from .utils.object_detection_helpers import extract_filter, nms, revert_coords, xywh2xyxy
 
 npimagebgr : TypeAlias = np.ndarray[tuple[int, int, Literal[3]], np.uint8]
 npimagegray: TypeAlias = np.ndarray[tuple[int, int], np.uint8]
@@ -36,22 +37,22 @@ class YOLODetect:
         self.__input_index = self.__interpreter.get_input_details()[0]["index"]
         self.__output_index = self.__interpreter.get_output_details()[0]["index"]
 
-        self.__target_size = 320
+        self.__nn_size = 320
         self.classes = COCO_CLASSES
 
     # @line_profiler.profile
     def __preprocess(
         self,
         frame: npt.NDArray
-    ) -> tuple[npt.NDArray, tuple[int, int], float, tuple[int, int, int, int]]:
+    ) -> tuple[npt.NDArray, tuple[int, int], tuple[int, int, int, int], float]:
         h, w = frame.shape[:2]
-        scale = self.__target_size / max(h, w)
+        scale = self.__nn_size / max(h, w)
         new_h, new_w = round(h * scale), round(w * scale)
         img = cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
-        pad_h = self.__target_size - new_h
-        pad_w = self.__target_size - new_w
+        pad_h = self.__nn_size - new_h
+        pad_w = self.__nn_size - new_w
         top = pad_h // 2
         bottom = pad_h - top
         left = pad_w // 2
@@ -61,88 +62,28 @@ class YOLODetect:
         img = cv2.multiply(img, 1.0 / 255.0, dtype=cv2.CV_32F)
         img = np.expand_dims(img, axis=0)
 
-        return img, frame.shape[:2], scale, (top, bottom, left, right)
+        return img, frame.shape[:2], (top, bottom, left, right), scale
 
     # @line_profiler.profile
     def __postprocess(
         self,
         preds: npt.NDArray, 
         orig_shape: tuple[int, int],
-        scale: float, 
-        pad_info: tuple[int, int, int, int]
+        pad_info: tuple[int, int, int, int],
+        scale: float
     ) -> list[Box]:
-        # extracting bbox data
-        preds = preds[0].T
-        boxes = preds[:, :4]
-        class_scores = preds[:, 4:]
-        class_ids: npt.NDArray = np.argmax(class_scores, axis=1)
-        confs = class_scores[np.arange(class_scores.shape[0]), class_ids]
-
-        # filtering by confidence
-        filter_mask = confs >= 0.25
-        boxes = boxes[filter_mask, :]
-        class_ids = class_ids[filter_mask]
-        confs = confs[filter_mask]
+        boxes, class_ids, confs = extract_filter(preds)
 
         if len(boxes) == 0:
             return []
 
-        # converting from xywh to xyxy
-        half_widths = boxes[:, 2] * 0.5
-        boxes[:, 2] = boxes[:, 0] + half_widths
-        boxes[:, 0] = boxes[:, 0] - half_widths
-        half_heights = boxes[:, 3] * 0.5
-        boxes[:, 3] = boxes[:, 1] + half_heights
-        boxes[:, 1] = boxes[:, 1] - half_heights
+        # check if this can be replaced with
+        # cv2.dnn.NMSBoxesBatched() to produce 
+        # better performance
+        boxes = xywh2xyxy(boxes)
+        boxes, class_ids, confs = nms(boxes, class_ids, confs)
 
-        # nms
-        # check if all of this can be replaced
-        # with cv2.dnn.NMSBoxesBatched() and
-        # produce better performance
-        x1 = boxes[:, 0]
-        y1 = boxes[:, 1]
-        x2 = boxes[:, 2]
-        y2 = boxes[:, 3]
-
-        areas = (x2 - x1) * (y2 - y1)
-        indices = np.argsort(confs)
-
-        keep_indices = []
-        while len(indices) > 0:
-            i_curr = indices[-1]
-            i_rest = indices[: -1]
-
-            keep_indices.append(i_curr)
-            
-            xx1 = np.maximum(x1[i_curr], x1[i_rest])
-            yy1 = np.maximum(y1[i_curr], y1[i_rest])
-            xx2 = np.minimum(x2[i_curr], x2[i_rest])
-            yy2 = np.minimum(y2[i_curr], y2[i_rest])
-
-            w = np.maximum(0.0, xx2 - xx1)
-            h = np.maximum(0.0, yy2 - yy1)
-
-            inter = w * h
-            union = areas[i_curr] + areas[i_rest] - inter
-            iou = inter / union
-
-            mask = (iou <= 0.7) | (class_ids[i_curr] != class_ids[i_rest])
-            indices = i_rest[mask]
-
-        boxes = boxes[keep_indices, :]
-        class_ids = class_ids[keep_indices]
-        confs = confs[keep_indices]
-
-        # transforming coords to
-        # original image shape
-        h, w = orig_shape
-        h, w = h - 1, w - 1
-        top, _, left, _ = pad_info
-
-        boxes *= self.__target_size
-        boxes -= np.array([left, top, left, top])
-        boxes *= 1 / scale
-        boxes = np.clip(boxes, np.zeros(4), [w, h, w, h]).astype(np.int32)
+        boxes = revert_coords(boxes, orig_shape, pad_info, scale, self.__nn_size)
         
         # creating our objects
         final_boxes = [
@@ -154,14 +95,13 @@ class YOLODetect:
 
     # @line_profiler.profile
     def get_objects(self, frame: npimagebgr) -> Objects:
-        image, orig_shape, scale, pad_info = self.__preprocess(frame)
+        image, orig_shape, pad_info, scale = self.__preprocess(frame)
 
         self.__interpreter.set_tensor(self.__input_index, image)
         self.__interpreter.invoke()
         preds = self.__interpreter.get_tensor(self.__output_index)
 
-        boxes = self.__postprocess(preds, orig_shape, scale, pad_info)
-
+        boxes = self.__postprocess(preds, orig_shape, pad_info, scale)
         return boxes, []
     
 class YOLOSegment:
