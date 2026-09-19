@@ -71,43 +71,6 @@ class YOLODetect:
         scale: float, 
         pad_info: tuple[int, int, int, int]
     ) -> list[Box]:
-        preds = preds[0]
-        boxes = preds[:, :4]
-        confs = preds[:, 4].astype(np.float32)
-        cls_ids = preds[:, 5].astype(np.int32)
-
-        filter_mask = confs >= 0.25
-        boxes = boxes[filter_mask]
-        confs = confs[filter_mask]
-        cls_ids = cls_ids[filter_mask]
-
-        h, w = orig_shape
-        top, bottom, left, right = pad_info
-
-        x1, y1, x2, y2 = boxes.T
-
-        x1: npt.NDArray = np.clip((x1 * self.__target_size - left) / scale, 0, w).astype(np.int32)
-        y1: npt.NDArray = np.clip((y1 * self.__target_size - top) / scale, 0, h).astype(np.int32)
-        x2: npt.NDArray = np.clip((x2 * self.__target_size - left) / scale, 0, w).astype(np.int32)
-        y2: npt.NDArray = np.clip((y2 * self.__target_size - top) / scale, 0, h).astype(np.int32)
-
-        final_boxes = [
-            (x1[i], y1[i], x2[i], y2[i], cls_ids[i], confs[i]) 
-            for i in range(len(x1))
-        ]
-
-        return final_boxes
-
-    # @line_profiler.profile
-    def __postprocess_v1(
-        self,
-        preds: npt.NDArray, 
-        orig_shape: tuple[int, int],
-        scale: float, 
-        pad_info: tuple[int, int, int, int]
-    ) -> list[Box]:
-        print(f"initial shape: {preds.shape}")
-        
         # extracting bbox data
         preds = preds[0].T
         boxes = preds[:, :4]
@@ -115,22 +78,14 @@ class YOLODetect:
         class_ids: npt.NDArray = np.argmax(class_scores, axis=1)
         confs = class_scores[np.arange(class_scores.shape[0]), class_ids]
 
-        print(f"boxes: {boxes.shape}")
-        print(f"class_scores: {class_scores.shape}")
-        print(f"class_ids: {class_ids.shape}")
-        print(f"confs: {confs.shape}")
-
         # filtering by confidence
         filter_mask = confs >= 0.25
         boxes = boxes[filter_mask, :]
         class_ids = class_ids[filter_mask]
         confs = confs[filter_mask]
-                
-        print(f"boxes: {boxes.shape}")
-        print(f"class_ids: {class_ids.shape}")
-        print(f"confs: {confs.shape}")
 
-        # print(f"boxes xywh {boxes}")
+        if len(boxes) == 0:
+            return []
 
         # converting from xywh to xyxy
         half_widths = boxes[:, 2] * 0.5
@@ -139,16 +94,11 @@ class YOLODetect:
         half_heights = boxes[:, 3] * 0.5
         boxes[:, 3] = boxes[:, 1] + half_heights
         boxes[:, 1] = boxes[:, 1] - half_heights
-        
-        # print(f"boxes xyxy {boxes}")
 
         # nms
         # check if all of this can be replaced
         # with cv2.dnn.NMSBoxesBatched() and
         # produce better performance
-        if len(boxes) == 0:
-            return []
-        
         x1 = boxes[:, 0]
         y1 = boxes[:, 1]
         x2 = boxes[:, 2]
@@ -183,12 +133,6 @@ class YOLODetect:
         class_ids = class_ids[keep_indices]
         confs = confs[keep_indices]
 
-        print(f"boxes: {boxes.shape}")
-        print(f"class_ids: {class_ids.shape}")
-        print(f"confs: {confs.shape}")
-
-        print(f"boxes: {boxes}")
-
         # transforming coords to
         # original image shape
         h, w = orig_shape
@@ -200,15 +144,11 @@ class YOLODetect:
         boxes *= 1 / scale
         boxes = np.clip(boxes, np.zeros(4), [w, h, w, h]).astype(np.int32)
         
-        print(f"boxes: {boxes}")
-        
         # creating our objects
         final_boxes = [
             (*box, class_id, conf)
             for box, class_id, conf in zip(boxes, class_ids, confs)
         ]
-        
-        print(final_boxes)
         
         return final_boxes
 
@@ -220,8 +160,7 @@ class YOLODetect:
         self.__interpreter.invoke()
         preds = self.__interpreter.get_tensor(self.__output_index)
 
-        # boxes = self.__postprocess(preds, orig_shape, scale, pad_info)
-        boxes = self.__postprocess_v1(preds, orig_shape, scale, pad_info)
+        boxes = self.__postprocess(preds, orig_shape, scale, pad_info)
 
         return boxes, []
     
