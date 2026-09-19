@@ -9,7 +9,6 @@ import tensorflow as tf
 from enum import Enum
 from scipy import ndimage
 from typing import Literal, TypeAlias
-from ultralytics import YOLO
 from .utils.depth_estimation_helpers import get_object_depth_box, get_object_depth_mask
 
 npimagebgr : TypeAlias = np.ndarray[tuple[int, int, Literal[3]], np.uint8]
@@ -20,15 +19,25 @@ Mask    : TypeAlias = np.ndarray[tuple[int, int], bool]
 Centroid: TypeAlias = tuple[tuple[int, int], str]
 Objects : TypeAlias = tuple[list[Box], list[Mask]]
 
+COCO_CLASSES = ["person", "bicycle", "car", "motorbike", "aeroplane", "bus", "train", "truck", "boat", "traffic light", 
+                "fire hydrant", "stop sign", "parking meter", "bench", "bird", "cat", "dog", "horse", "sheep", "cow", 
+                "elephant", "bear", "zebra", "giraffe", "backpack", "umbrella", "handbag", "tie", "suitcase", "frisbee", 
+                "skis", "snowboard", "sports ball", "kite", "baseball bat", "baseball glove", "skateboard", "surfboard", 
+                "tennis racket", "bottle", "wine glass", "cup", "fork", "knife", "spoon", "bowl", "banana", "apple", "sandwich", 
+                "orange", "broccoli", "carrot", "hot dog", "pizza", "donut", "cake", "chair", "sofa", "pottedplant", "bed", 
+                "diningtable", "toilet", "tvmonitor", "laptop", "mouse", "remote", "keyboard", "cell phone", "microwave", "oven", 
+                "toaster", "sink", "refrigerator", "book", "clock", "vase", "scissors", "teddy bear", "hair drier", "toothbrush"]
+
 class YOLODetect:
     def __init__(self):
-        self.__interpreter = tf.lite.Interpreter(f"weights/yolo26n_float32.tflite", num_threads=4)
+        # self.__interpreter = tf.lite.Interpreter(f"weights/yolo26n_float32.tflite", num_threads=4)
+        self.__interpreter = tf.lite.Interpreter(f"weights/yolo26n_coco_f32.tflite", num_threads=4)
         self.__interpreter.allocate_tensors()
         self.__input_index = self.__interpreter.get_input_details()[0]["index"]
         self.__output_index = self.__interpreter.get_output_details()[0]["index"]
 
         self.__target_size = 320
-        self.classes = YOLO("weights/yolo26n_float32.tflite", task="detect").names
+        self.classes = COCO_CLASSES
 
     # @line_profiler.profile
     def __preprocess(
@@ -90,6 +99,120 @@ class YOLODetect:
         return final_boxes
 
     # @line_profiler.profile
+    def __postprocess_v1(
+        self,
+        preds: npt.NDArray, 
+        orig_shape: tuple[int, int],
+        scale: float, 
+        pad_info: tuple[int, int, int, int]
+    ) -> list[Box]:
+        print(f"initial shape: {preds.shape}")
+        
+        # extracting bbox data
+        preds = preds[0].T
+        boxes = preds[:, :4]
+        class_scores = preds[:, 4:]
+        class_ids: npt.NDArray = np.argmax(class_scores, axis=1)
+        confs = class_scores[np.arange(class_scores.shape[0]), class_ids]
+
+        print(f"boxes: {boxes.shape}")
+        print(f"class_scores: {class_scores.shape}")
+        print(f"class_ids: {class_ids.shape}")
+        print(f"confs: {confs.shape}")
+
+        # filtering by confidence
+        filter_mask = confs >= 0.25
+        boxes = boxes[filter_mask, :]
+        class_ids = class_ids[filter_mask]
+        confs = confs[filter_mask]
+                
+        print(f"boxes: {boxes.shape}")
+        print(f"class_ids: {class_ids.shape}")
+        print(f"confs: {confs.shape}")
+
+        # print(f"boxes xywh {boxes}")
+
+        # converting from xywh to xyxy
+        half_widths = boxes[:, 2] * 0.5
+        boxes[:, 2] = boxes[:, 0] + half_widths
+        boxes[:, 0] = boxes[:, 0] - half_widths
+        half_heights = boxes[:, 3] * 0.5
+        boxes[:, 3] = boxes[:, 1] + half_heights
+        boxes[:, 1] = boxes[:, 1] - half_heights
+        
+        # print(f"boxes xyxy {boxes}")
+
+        # nms
+        # check if all of this can be replaced
+        # with cv2.dnn.NMSBoxesBatched() and
+        # produce better performance
+        if len(boxes) == 0:
+            return []
+        
+        x1 = boxes[:, 0]
+        y1 = boxes[:, 1]
+        x2 = boxes[:, 2]
+        y2 = boxes[:, 3]
+
+        areas = (x2 - x1) * (y2 - y1)
+        indices = np.argsort(confs)
+
+        keep_indices = []
+        while len(indices) > 0:
+            i_curr = indices[-1]
+            i_rest = indices[: -1]
+
+            keep_indices.append(i_curr)
+            
+            xx1 = np.maximum(x1[i_curr], x1[i_rest])
+            yy1 = np.maximum(y1[i_curr], y1[i_rest])
+            xx2 = np.minimum(x2[i_curr], x2[i_rest])
+            yy2 = np.minimum(y2[i_curr], y2[i_rest])
+
+            w = np.maximum(0.0, xx2 - xx1)
+            h = np.maximum(0.0, yy2 - yy1)
+
+            inter = w * h
+            union = areas[i_curr] + areas[i_rest] - inter
+            iou = inter / union
+
+            mask = (iou <= 0.7) | (class_ids[i_curr] != class_ids[i_rest])
+            indices = i_rest[mask]
+
+        boxes = boxes[keep_indices, :]
+        class_ids = class_ids[keep_indices]
+        confs = confs[keep_indices]
+
+        print(f"boxes: {boxes.shape}")
+        print(f"class_ids: {class_ids.shape}")
+        print(f"confs: {confs.shape}")
+
+        print(f"boxes: {boxes}")
+
+        # transforming coords to
+        # original image shape
+        h, w = orig_shape
+        h, w = h - 1, w - 1
+        top, _, left, _ = pad_info
+
+        boxes *= self.__target_size
+        boxes -= np.array([left, top, left, top])
+        boxes *= 1 / scale
+        boxes = np.clip(boxes, np.zeros(4), [w, h, w, h]).astype(np.int32)
+        
+        print(f"boxes: {boxes}")
+        
+        # creating our objects
+        final_boxes = [
+            (*box, class_id, conf)
+            for box, class_id, conf in zip(boxes, class_ids, confs)
+        ]
+        
+        print(final_boxes)
+        
+        return final_boxes
+
+    # @line_profiler.profile
     def get_objects(self, frame: npimagebgr) -> Objects:
         image, orig_shape, scale, pad_info = self.__preprocess(frame)
 
@@ -97,7 +220,8 @@ class YOLODetect:
         self.__interpreter.invoke()
         preds = self.__interpreter.get_tensor(self.__output_index)
 
-        boxes = self.__postprocess(preds, orig_shape, scale, pad_info)
+        # boxes = self.__postprocess(preds, orig_shape, scale, pad_info)
+        boxes = self.__postprocess_v1(preds, orig_shape, scale, pad_info)
 
         return boxes, []
     
@@ -111,7 +235,7 @@ class YOLOSegment:
         self.__output1_index = self.__interpreter.get_output_details()[1]["index"]
 
         self.__target_size = 320
-        self.classes = YOLO("weights/yolo26n-seg_float32.tflite", task="segment").names
+        self.classes = COCO_CLASSES
 
     # @line_profiler.profile
     def __preprocess(
