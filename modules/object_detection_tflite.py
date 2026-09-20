@@ -29,6 +29,11 @@ COCO_CLASSES = ["person", "bicycle", "car", "motorbike", "aeroplane", "bus", "tr
                 "diningtable", "toilet", "tvmonitor", "laptop", "mouse", "remote", "keyboard", "cell phone", "microwave", "oven", 
                 "toaster", "sink", "refrigerator", "book", "clock", "vase", "scissors", "teddy bear", "hair drier", "toothbrush"]
 
+OD_V2_CLASSES = ["backpack", "bench", "bicycle", "bottle", "bus", "car", "cat", "chair", "dog", "horse", "laptop", 
+                 "motorcycle", "person", "potted plant", "sink", "suitcase", "train", "truck", "vase", "bed", "cabinet", 
+                 "closed door", "couch", "dining table", "down stairs", "escalator", "fire hydrant", "green traffic", 
+                 "opened door", "oven", "red traffic", "refrigerator", "stop sign", "toilet", "tv", "up stairs", "window"]
+
 class YOLODetect:
     def __init__(self):
         # self.__interpreter = tf.lite.Interpreter(f"weights/yolo26n_float32.tflite", num_threads=4)
