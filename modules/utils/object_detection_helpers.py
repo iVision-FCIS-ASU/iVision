@@ -171,11 +171,12 @@ def extract_masks(
     coeffs: NDArrayf32
 ) -> NDArrayf32:
     proto = proto[0]
-    proto_flat = proto.reshape(32, -1)
+    num_coeffs, proto_h, proto_w = proto.shape
+    proto_flat = proto.reshape(num_coeffs, -1)
     
     masks = coeffs @ proto_flat
     masks: npt.NDArray = 1 / (1 + np.exp(-masks))
-    masks = masks.reshape(-1, 80, 80)
+    masks = masks.reshape(-1, proto_h, proto_w)
 
     return masks
 
@@ -187,18 +188,20 @@ def construct_final_masks(
     nn_size: int
 ) -> list[npt.NDArray[np.bool_]]:
     box: tuple[int, int, int, int]
+    mask: NDArrayf32
+
     h, w = orig_shape
     top, bottom, left, right = pad_info
 
     final_masks = []
     for box, mask in zip(boxes, masks):
-        mask: npt.NDArray = cv2.resize(mask, (nn_size, nn_size), interpolation=cv2.INTER_LINEAR)
+        mask = cv2.resize(mask, (nn_size, nn_size), interpolation=cv2.INTER_LINEAR)
         mask = mask[top : nn_size - bottom, left : nn_size - right]
         mask = cv2.resize(mask, (w, h), interpolation=cv2.INTER_LINEAR)
 
         x1, y1, x2, y2 = box
-        cropped = np.zeros_like(mask, dtype=np.uint8)
-        cropped[y1:y2, x1:x2] = (mask[y1:y2, x1:x2] > 0.5)
-        final_masks.append(cropped.astype(bool))
+        cropped = np.zeros_like(mask, dtype=np.bool_)
+        cropped[y1 : y2+1, x1 : x2+1] = (mask[y1 : y2+1, x1 : x2+1] > 0.5)
+        final_masks.append(cropped)
     
     return final_masks
