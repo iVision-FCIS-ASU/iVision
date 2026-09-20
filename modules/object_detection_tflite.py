@@ -10,7 +10,9 @@ from enum import Enum
 from scipy import ndimage
 from typing import Literal, TypeAlias
 from .utils.depth_estimation_helpers import get_object_depth_box, get_object_depth_mask
-from .utils.object_detection_helpers import extract_filter, nms, revert_coords, xywh2xyxy
+from .utils.object_detection_helpers import (construct_final_boxes, construct_final_masks,
+                                             extract_filter, extract_masks, nms, 
+                                             revert_coords, xywh2xyxy)
 
 npimagebgr : TypeAlias = np.ndarray[tuple[int, int, Literal[3]], np.uint8]
 npimagegray: TypeAlias = np.ndarray[tuple[int, int], np.uint8]
@@ -77,7 +79,7 @@ class YOLODetect:
         pad_info: tuple[int, int, int, int],
         scale: float
     ) -> list[Box]:
-        boxes, class_ids, confs = extract_filter(preds)
+        boxes, class_ids, confs, _ = extract_filter(preds, len(self.classes))
 
         if len(boxes) == 0:
             return []
@@ -86,15 +88,9 @@ class YOLODetect:
         # cv2.dnn.NMSBoxesBatched() to produce 
         # better performance
         boxes = xywh2xyxy(boxes)
-        boxes, class_ids, confs = nms(boxes, class_ids, confs)
-
+        boxes, class_ids, confs, _ = nms(boxes, class_ids, confs)
         boxes = revert_coords(boxes, orig_shape, pad_info, scale, self.__nn_size)
-        
-        # creating our objects
-        final_boxes = [
-            (*box, class_id, conf)
-            for box, class_id, conf in zip(boxes, class_ids, confs)
-        ]
+        final_boxes = construct_final_boxes(boxes, class_ids, confs)
         
         return final_boxes
 
@@ -111,14 +107,15 @@ class YOLODetect:
     
 class YOLOSegment:
     def __init__(self):
-        self.__interpreter = tf.lite.Interpreter(f"weights/yolo26n-seg_float32.tflite", num_threads=4)
+        # self.__interpreter = tf.lite.Interpreter(f"weights/yolo26n-seg_float32.tflite", num_threads=4)
+        self.__interpreter = tf.lite.Interpreter(f"weights/yolo26n-seg_coco_f32.tflite", num_threads=4)
         self.__interpreter.allocate_tensors()
 
         self.__input_index = self.__interpreter.get_input_details()[0]["index"]
         self.__output0_index = self.__interpreter.get_output_details()[0]["index"]
         self.__output1_index = self.__interpreter.get_output_details()[1]["index"]
 
-        self.__target_size = 320
+        self.__nn_size = 320
         self.classes = COCO_CLASSES
 
     # @line_profiler.profile
@@ -127,13 +124,13 @@ class YOLOSegment:
         frame: npt.NDArray
     ) -> tuple[npt.NDArray, tuple[int, int], float, tuple[int, int, int, int]]:
         h, w = frame.shape[:2]
-        scale = self.__target_size / max(h, w)
+        scale = self.__nn_size / max(h, w)
         new_h, new_w = round(h * scale), round(w * scale)
         img = cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
-        pad_h = self.__target_size - new_h
-        pad_w = self.__target_size - new_w
+        pad_h = self.__nn_size - new_h
+        pad_w = self.__nn_size - new_w
         top = pad_h // 2
         bottom = pad_h - top
         left = pad_w // 2
@@ -143,7 +140,7 @@ class YOLOSegment:
         img = cv2.multiply(img, 1.0 / 255.0, dtype=cv2.CV_32F)
         img = np.expand_dims(img, axis=0)
 
-        return img, frame.shape[:2], scale, (top, bottom, left, right)
+        return img, frame.shape[:2], (top, bottom, left, right), scale
 
     # @line_profiler.profile
     def __postprocess(
@@ -151,8 +148,8 @@ class YOLOSegment:
         preds: npt.NDArray, 
         proto: npt.NDArray, 
         orig_shape: tuple[int, int],
-        scale: float, 
-        pad_info: tuple[int, int, int, int]
+        pad_info: tuple[int, int, int, int],
+        scale: float,
     ) -> Objects:
         preds = preds[0]
         proto = proto[0]
@@ -173,10 +170,10 @@ class YOLOSegment:
 
         x1, y1, x2, y2 = boxes.T
 
-        x1: npt.NDArray = np.clip((x1 * self.__target_size - left) / scale, 0, w).astype(np.int32)
-        y1: npt.NDArray = np.clip((y1 * self.__target_size - top) / scale, 0, h).astype(np.int32)
-        x2: npt.NDArray = np.clip((x2 * self.__target_size - left) / scale, 0, w).astype(np.int32)
-        y2: npt.NDArray = np.clip((y2 * self.__target_size - top) / scale, 0, h).astype(np.int32)
+        x1: npt.NDArray = np.clip((x1 * self.__nn_size - left) / scale, 0, w).astype(np.int32)
+        y1: npt.NDArray = np.clip((y1 * self.__nn_size - top) / scale, 0, h).astype(np.int32)
+        x2: npt.NDArray = np.clip((x2 * self.__nn_size - left) / scale, 0, w).astype(np.int32)
+        y2: npt.NDArray = np.clip((y2 * self.__nn_size - top) / scale, 0, h).astype(np.int32)
 
         final_boxes = [
             (x1[i], y1[i], x2[i], y2[i], cls_ids[i], confs[i]) 
@@ -192,13 +189,37 @@ class YOLOSegment:
         final_masks = []
 
         for i, mask in enumerate(masks):
-            mask: npt.NDArray = cv2.resize(mask, (self.__target_size, self.__target_size), interpolation=cv2.INTER_LINEAR)
-            mask = mask[top: self.__target_size - bottom, left: self.__target_size - right]
+            mask: npt.NDArray = cv2.resize(mask, (self.__nn_size, self.__nn_size), interpolation=cv2.INTER_LINEAR)
+            mask = mask[top: self.__nn_size - bottom, left: self.__nn_size - right]
             mask = cv2.resize(mask, (w, h), interpolation=cv2.INTER_LINEAR)
 
             cropped = np.zeros_like(mask, dtype=np.uint8)
             cropped[y1[i]: y2[i], x1[i]:x2[i]] = (mask[y1[i]: y2[i], x1[i]:x2[i]] > 0.5)
             final_masks.append(cropped.astype(bool))
+
+        return final_boxes, final_masks
+
+    # @line_profiler.profile
+    def __postprocess_v1(
+        self,
+        preds: npt.NDArray,
+        proto: npt.NDArray,
+        orig_shape: tuple[int, int],
+        pad_info: tuple[int, int, int, int],
+        scale: float
+    ) -> Objects:
+        boxes, class_ids, confs, coeffs = extract_filter(preds, len(self.classes))
+
+        if len(boxes) == 0:
+            return [], []
+
+        boxes = xywh2xyxy(boxes)
+        boxes, class_ids, confs, coeffs = nms(boxes, class_ids, confs, coeffs)
+        boxes = revert_coords(boxes, orig_shape, pad_info, scale, self.__nn_size)
+        final_boxes = construct_final_boxes(boxes, class_ids, confs)
+
+        masks = extract_masks(proto, coeffs)
+        final_masks = construct_final_masks(boxes, masks, orig_shape, pad_info, self.__nn_size)
 
         return final_boxes, final_masks
     
@@ -207,14 +228,15 @@ class YOLOSegment:
         self, 
         frame: npimagebgr
     ) -> Objects:
-        image, orig_shape, scale, pad_info = self.__preprocess(frame)
+        image, orig_shape, pad_info, scale = self.__preprocess(frame)
 
         self.__interpreter.set_tensor(self.__input_index, image)
         self.__interpreter.invoke()
         preds = self.__interpreter.get_tensor(self.__output0_index)
         proto = self.__interpreter.get_tensor(self.__output1_index)
 
-        boxes, masks = self.__postprocess(preds, proto, orig_shape, scale, pad_info)
+        # boxes, masks = self.__postprocess(preds, proto, orig_shape, pad_info, scale)
+        boxes, masks = self.__postprocess_v1(preds, proto, orig_shape, pad_info, scale)
 
         return boxes, masks
 

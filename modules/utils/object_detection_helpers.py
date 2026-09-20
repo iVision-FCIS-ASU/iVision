@@ -1,3 +1,4 @@
+import cv2
 import numpy as np
 import numpy.typing as npt
 from typing import TypeAlias
@@ -7,31 +8,35 @@ NDArrayi32: TypeAlias = npt.NDArray[np.int32]
 NDArrayip: TypeAlias = npt.NDArray[np.intp]
 
 def extract_filter(
-    preds: NDArrayf32, 
+    preds: NDArrayf32,
+    num_classes: int,
     conf_thresh: float = 0.25
-) -> tuple[NDArrayf32, NDArrayip, NDArrayf32]:
+) -> tuple[NDArrayf32, NDArrayip, NDArrayf32, NDArrayf32 | None]:
     """Extracts and filters the objects from the YOLO predictions.
 
     Args:
-        preds: Pre-NMS predictions from the YOLO model, shape=[1, 4 + classes, n].
+        preds: Pre-NMS predictions from the YOLO model, shape=[1, 4 + classes + coeffs, n].
         conf_thresh: Confidence threshold used to filter the objects.
     
     Returns:
-        Bounding boxes (raw xywh), class IDs and confidences.
-        Shapes are [m, 4], [m] and [m] respectively.
+        Bounding boxes (raw xywh), class IDs, confidences and mask coefficients (if existing).\n
+        Shapes are [m, 4], [m], [m] and [m, 32] respectively.
     """
-    preds = preds[0].T
-    boxes = preds[:, :4]
-    class_scores = preds[:, 4:]
+    preds: NDArrayf32 = preds[0].T
+    class_scores = preds[:, 4 : 4+num_classes]
     class_ids: NDArrayip = np.argmax(class_scores, axis=1)
     confs = class_scores[np.arange(class_scores.shape[0]), class_ids]
 
     filter_mask = confs >= conf_thresh
-    boxes = boxes[filter_mask, :]
+    boxes = preds[filter_mask, :4]
     class_ids = class_ids[filter_mask]
     confs = confs[filter_mask]
+    
+    coeffs = None
+    if preds.shape[1] > 4 + num_classes:
+        coeffs = preds[filter_mask, 4+num_classes : ] 
 
-    return boxes, class_ids, confs
+    return boxes, class_ids, confs, coeffs
 
 def xywh2xyxy(
         boxes: NDArrayf32
@@ -55,21 +60,23 @@ def xywh2xyxy(
     return boxes
 
 def nms(
-    boxes: NDArrayf32, 
+    boxes: NDArrayf32,
     class_ids: NDArrayip,
     confs: NDArrayf32,
+    coeffs: NDArrayf32 | None = None,
     iou_thresh: float = 0.7
-) -> tuple[NDArrayf32, NDArrayip, NDArrayf32]:
+) -> tuple[NDArrayf32, NDArrayip, NDArrayf32, NDArrayf32 | None]:
     """Applies class-aware NMS to filter the objects.
 
     Args:
         boxes: Bounding boxes (xyxy).
         class_ids: Class IDs.
         confs: Confidences.
+        coeffs: Mask coefficients.
         iou_thresh: IoU threshold used to filter duplicates.
     
     Returns:
-        Filtered boxes, class IDs and confidences.
+        Filtered boxes, class IDs, confidences and mask coefficients (if existing).
     """
     x1 = boxes[:, 0]
     y1 = boxes[:, 1]
@@ -101,11 +108,14 @@ def nms(
         mask = (iou <= iou_thresh) | (class_ids[i_curr] != class_ids[i_rest])
         indices = i_rest[mask]
 
-    boxes = boxes[keep_indices, :]
+    boxes = boxes[keep_indices]
     class_ids = class_ids[keep_indices]
     confs = confs[keep_indices]
 
-    return boxes, class_ids, confs
+    if coeffs is not None:
+        coeffs = coeffs[keep_indices]
+
+    return boxes, class_ids, confs, coeffs
 
 def revert_coords(
     boxes: NDArrayf32,
@@ -143,3 +153,52 @@ def revert_coords(
     boxes = np.clip(boxes, np.zeros(4), [w, h, w, h]).astype(np.int32)
 
     return boxes
+
+def construct_final_boxes(
+    boxes: NDArrayi32,
+    class_ids: NDArrayip,
+    confs: NDArrayf32
+) -> list[tuple[int, int, int, int, int, float]]:
+    final_boxes = [
+        (*box, class_id, conf)
+        for box, class_id, conf in zip(boxes, class_ids, confs)
+    ]
+    
+    return final_boxes
+
+def extract_masks(
+    proto: NDArrayf32,
+    coeffs: NDArrayf32
+) -> NDArrayf32:
+    proto = proto[0]
+    proto_flat = proto.reshape(32, -1)
+    
+    masks = coeffs @ proto_flat
+    masks: npt.NDArray = 1 / (1 + np.exp(-masks))
+    masks = masks.reshape(-1, 80, 80)
+
+    return masks
+
+def construct_final_masks(
+    boxes: NDArrayi32,
+    masks: NDArrayf32,
+    orig_shape: tuple[int, int],
+    pad_info: tuple[int, int, int, int],
+    nn_size: int
+) -> list[npt.NDArray[np.bool_]]:
+    box: tuple[int, int, int, int]
+    h, w = orig_shape
+    top, bottom, left, right = pad_info
+
+    final_masks = []
+    for box, mask in zip(boxes, masks):
+        mask: npt.NDArray = cv2.resize(mask, (nn_size, nn_size), interpolation=cv2.INTER_LINEAR)
+        mask = mask[top : nn_size - bottom, left : nn_size - right]
+        mask = cv2.resize(mask, (w, h), interpolation=cv2.INTER_LINEAR)
+
+        x1, y1, x2, y2 = box
+        cropped = np.zeros_like(mask, dtype=np.uint8)
+        cropped[y1:y2, x1:x2] = (mask[y1:y2, x1:x2] > 0.5)
+        final_masks.append(cropped.astype(bool))
+    
+    return final_masks
