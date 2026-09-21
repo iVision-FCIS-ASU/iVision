@@ -38,7 +38,6 @@ OD_V2_CLASSES = ["backpack", "bench", "bicycle", "bottle", "bus", "car", "cat", 
 
 class YOLODetect:
     def __init__(self):
-        # self.__interpreter = tf.lite.Interpreter(f"weights/yolo26n_float32.tflite", num_threads=4)
         self.__interpreter = tf.lite.Interpreter(f"weights/yolo26n_coco_f32.tflite", num_threads=4)
         self.__interpreter.allocate_tensors()
         self.__input_index = self.__interpreter.get_input_details()[0]["index"]
@@ -107,7 +106,6 @@ class YOLODetect:
     
 class YOLOSegment:
     def __init__(self):
-        # self.__interpreter = tf.lite.Interpreter(f"weights/yolo26n-seg_float32.tflite", num_threads=4)
         self.__interpreter = tf.lite.Interpreter(f"weights/yolo26n-seg_coco_f32.tflite", num_threads=4)
         self.__interpreter.allocate_tensors()
 
@@ -145,63 +143,6 @@ class YOLOSegment:
     # @line_profiler.profile
     def __postprocess(
         self,
-        preds: npt.NDArray, 
-        proto: npt.NDArray, 
-        orig_shape: tuple[int, int],
-        pad_info: tuple[int, int, int, int],
-        scale: float,
-    ) -> Objects:
-        preds = preds[0]
-        proto = proto[0]
-
-        boxes = preds[:, :4]
-        confs = preds[:, 4].astype(np.float32)
-        cls_ids = preds[:, 5].astype(np.int32)
-        coeffs = preds[:, 6:]
-
-        filter_mask = confs >= 0.25
-        boxes = boxes[filter_mask]
-        confs = confs[filter_mask]
-        cls_ids = cls_ids[filter_mask]
-        coeffs = coeffs[filter_mask]
-
-        h, w = orig_shape
-        top, bottom, left, right = pad_info
-
-        x1, y1, x2, y2 = boxes.T
-
-        x1: npt.NDArray = np.clip((x1 * self.__nn_size - left) / scale, 0, w).astype(np.int32)
-        y1: npt.NDArray = np.clip((y1 * self.__nn_size - top) / scale, 0, h).astype(np.int32)
-        x2: npt.NDArray = np.clip((x2 * self.__nn_size - left) / scale, 0, w).astype(np.int32)
-        y2: npt.NDArray = np.clip((y2 * self.__nn_size - top) / scale, 0, h).astype(np.int32)
-
-        final_boxes = [
-            (x1[i], y1[i], x2[i], y2[i], cls_ids[i], confs[i]) 
-            for i in range(len(x1))
-        ]
-
-        proto_flat = proto.reshape(-1, 32)
-        masks = proto_flat @ coeffs.T 
-        masks: npt.NDArray = 1 / (1 + np.exp(-masks))
-        masks = masks.reshape(80, 80, -1)
-        masks = np.transpose(masks, (2, 0, 1))
-
-        final_masks = []
-
-        for i, mask in enumerate(masks):
-            mask: npt.NDArray = cv2.resize(mask, (self.__nn_size, self.__nn_size), interpolation=cv2.INTER_LINEAR)
-            mask = mask[top: self.__nn_size - bottom, left: self.__nn_size - right]
-            mask = cv2.resize(mask, (w, h), interpolation=cv2.INTER_LINEAR)
-
-            cropped = np.zeros_like(mask, dtype=np.uint8)
-            cropped[y1[i]: y2[i], x1[i]:x2[i]] = (mask[y1[i]: y2[i], x1[i]:x2[i]] > 0.5)
-            final_masks.append(cropped.astype(bool))
-
-        return final_boxes, final_masks
-
-    # @line_profiler.profile
-    def __postprocess_v1(
-        self,
         preds: npt.NDArray,
         proto: npt.NDArray,
         orig_shape: tuple[int, int],
@@ -235,9 +176,7 @@ class YOLOSegment:
         preds = self.__interpreter.get_tensor(self.__output0_index)
         proto = self.__interpreter.get_tensor(self.__output1_index)
 
-        # boxes, masks = self.__postprocess(preds, proto, orig_shape, pad_info, scale)
-        boxes, masks = self.__postprocess_v1(preds, proto, orig_shape, pad_info, scale)
-
+        boxes, masks = self.__postprocess(preds, proto, orig_shape, pad_info, scale)
         return boxes, masks
 
 class ObjectDetectorTFLite:
